@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Env / secrets
+.env
+.env.local
+
+# Downloaded datasets (regenerable via ingestion loaders)
+pipeline/data/
