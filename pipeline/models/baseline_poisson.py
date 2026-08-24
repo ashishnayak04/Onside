@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from scipy.special import gammaln
 
 log = logging.getLogger("baseline_poisson")
 
@@ -75,9 +76,11 @@ class DixonColesModel:
         If provided, uses a fixed correlation parameter instead of fitting.
     """
 
-    def __init__(self, max_goals: int = 8, rho: float | None = None) -> None:
+    def __init__(self, max_goals: int = 8, rho: float | None = None,
+                 recency_xi: float | None = None) -> None:
         self.max_goals = max_goals
         self._fixed_rho = rho
+        self.recency_xi = recency_xi  # e.g. 0.004 => ~173-day half-life
         self.rho: float = 0.0
         self.attack: dict[str, float] = {}
         self.defense: dict[str, float] = {}
@@ -97,8 +100,12 @@ class DixonColesModel:
             home_team, away_team, home_score, away_score
         """
         df = df.copy()
-        df["home_score"] = df["home_score"].astype(int)
-        df["away_score"] = df["away_score"].astype(int)
+        # Keep fractional counts (e.g. xG) as floats — gammaln handles them;
+        # integerize otherwise for exact low-score tau matching
+        frac = ((df["home_score"] % 1 != 0) | (df["away_score"] % 1 != 0)).any()
+        dtype = float if frac else int
+        df["home_score"] = df["home_score"].astype(dtype)
+        df["away_score"] = df["away_score"].astype(dtype)
 
         teams = sorted(set(df["home_team"].tolist() + df["away_team"].tolist()))
         n_teams = len(teams)
@@ -106,50 +113,77 @@ class DixonColesModel:
 
         log.info("Fitting Dixon-Coles on %d matches, %d teams", len(df), n_teams)
 
-        # Parameters: [attack_0..n-1, defense_0..n-1, rho]
+        # Parameters: [attack_0..n-1, defense_0..n-1, home_advantage(, rho)]
         # Attack[0] = 0 (reference team), defense[0] = 0 (reference team)
         n_attack = n_teams - 1
         n_defense = n_teams - 1
-        n_params = n_attack + n_defense + 1
+        fit_rho = self._fixed_rho is None
+        n_params = n_attack + n_defense + 1 + (1 if fit_rho else 0)
+
+        # Precompute arrays once — the likelihood below is fully vectorized
+        home_idx = df["home_team"].map(team_idx).to_numpy(dtype=np.intp)
+        away_idx = df["away_team"].map(team_idx).to_numpy(dtype=np.intp)
+        hg = df["home_score"].to_numpy(dtype=np.int64)
+        ag = df["away_score"].to_numpy(dtype=np.int64)
+        log_hg_fact = gammaln(hg + 1.0)
+        log_ag_fact = gammaln(ag + 1.0)
+
+        # Optional exponential recency weights (more recent matches matter more)
+        if self.recency_xi is not None and "match_date" in df.columns:
+            dates = pd.to_datetime(df["match_date"])
+            ages = (dates.max() - dates).dt.days.to_numpy(dtype=float)
+            w = np.exp(-self.recency_xi * np.maximum(ages, 0.0))
+        else:
+            w = None
 
         def _neg_log_likelihood(params: np.ndarray) -> float:
             attack = np.zeros(n_teams)
             attack[1:] = params[:n_attack]
             defense = np.zeros(n_teams)
             defense[1:] = params[n_attack:n_attack + n_defense]
-            rho = params[-1] if self._fixed_rho is None else self._fixed_rho
+            home_adv = params[n_attack + n_defense]
+            if fit_rho:
+                rho = params[-1]
+            else:
+                rho = self._fixed_rho
 
-            ll = 0.0
-            for _, row in df.iterrows():
-                h_idx = team_idx[row["home_team"]]
-                a_idx = team_idx[row["away_team"]]
+            lambda_ = np.exp(attack[home_idx] + defense[away_idx] + home_adv)
+            mu = np.exp(attack[away_idx] + defense[home_idx])
 
-                lambda_ = math.exp(attack[h_idx] + defense[a_idx] + self.home_advantage)
-                mu = math.exp(attack[a_idx] + defense[h_idx])
+            base = (hg * np.log(lambda_) - lambda_ - log_hg_fact
+                    + ag * np.log(mu) - mu - log_ag_fact)
 
-                x = int(row["home_score"])
-                y = int(row["away_score"])
+            # Dixon-Coles tau adjustment (log-space, guarded for positivity)
+            eps = 1e-10
+            m00 = (hg == 0) & (ag == 0)
+            m01 = (hg == 0) & (ag == 1)
+            m10 = (hg == 1) & (ag == 0)
+            m11 = (hg == 1) & (ag == 1)
+            tau_log = np.zeros(len(hg))
+            tau_log[m00] = np.log(np.clip(1.0 - lambda_[m00] * mu[m00] * rho, eps, None))
+            tau_log[m01] = np.log(np.clip(1.0 + lambda_[m01] * rho, eps, None))
+            tau_log[m10] = np.log(np.clip(1.0 + mu[m10] * rho, eps, None))
+            tau_log[m11] = np.log(np.clip(1.0 - rho, eps, None))
 
-                tau = _tau(x, y, lambda_, mu, rho)
-                pmf = _poisson_pmf(x, lambda_) * _poisson_pmf(y, mu) * tau
-
-                if pmf > 0:
-                    ll += math.log(pmf)
-                else:
-                    ll += -20  # penalty for impossible combos
-
+            total = base + tau_log
+            ll = float(np.sum(w * total)) if w is not None else float(np.sum(total))
             return -ll
 
-        # Initial guess
+        # Initial guess: home advantage ~0.26 (typical La Liga log ratio)
         x0 = np.zeros(n_params)
-        x0[-1] = self._fixed_rho if self._fixed_rho is not None else -0.1
+        x0[n_attack + n_defense] = 0.26
+        if fit_rho:
+            x0[-1] = -0.1
+
+        bounds = [(-5, 5)] * (n_attack + n_defense) + [(-1, 1)]
+        if fit_rho:
+            bounds.append((-1, 1))
 
         result = minimize(
             _neg_log_likelihood,
             x0,
             method="L-BFGS-B",
-            bounds=[(-5, 5)] * (n_params - 1) + [(-1, 1)] if self._fixed_rho is None
-                   else [(-5, 5)] * (n_params - 1),
+            bounds=bounds,
             options={"maxiter": 5000, "ftol": 1e-10},
         )
 
@@ -166,13 +200,8 @@ class DixonColesModel:
         for i, t in enumerate(teams[1:], 1):
             self.defense[t] = opt[n_attack + i - 1]
 
-        self.rho = opt[-1] if self._fixed_rho is None else self._fixed_rho
-
-        # Estimate home advantage from residual
-        total_home_goals = df["home_score"].mean()
-        total_away_goals = df["away_score"].mean()
-        avg_attack = np.mean([abs(v) for v in self.attack.values()])
-        self.home_advantage = math.log(max(total_home_goals / max(total_away_goals, 0.01), 0.3))
+        self.home_advantage = float(opt[n_attack + n_defense])
+        self.rho = float(opt[-1]) if fit_rho else self._fixed_rho
 
         self._fitted = True
         log.info("Fitted: rho=%.4f, home_advantage=%.4f, %d teams",
@@ -186,13 +215,7 @@ class DixonColesModel:
         self, home_team: str, away_team: str
     ) -> dict[tuple[int, int], float]:
         """Return {(home_goals, away_goals): probability} for all scorelines."""
-        att_h = self.attack.get(home_team, 0.0)
-        def_h = self.defense.get(home_team, 0.0)
-        att_a = self.attack.get(away_team, 0.0)
-        def_a = self.defense.get(away_team, 0.0)
-
-        lambda_ = math.exp(att_h + def_a + self.home_advantage)
-        mu = math.exp(att_a + def_h)
+        lambda_, mu = self.rate_params(home_team, away_team)
 
         probs: dict[tuple[int, int], float] = {}
         for x in range(self.max_goals + 1):
@@ -203,6 +226,17 @@ class DixonColesModel:
                     probs[(x, y)] = p
 
         return probs
+
+    def rate_params(self, home_team: str, away_team: str) -> tuple[float, float]:
+        """Return (lambda_, mu): expected goals for home and away team."""
+        att_h = self.attack.get(home_team, 0.0)
+        def_h = self.defense.get(home_team, 0.0)
+        att_a = self.attack.get(away_team, 0.0)
+        def_a = self.defense.get(away_team, 0.0)
+
+        lambda_ = math.exp(att_h + def_a + self.home_advantage)
+        mu = math.exp(att_a + def_h)
+        return lambda_, mu
 
     def predict(
         self, home_team: str, away_team: str,
