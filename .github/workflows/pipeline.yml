@@ -1,0 +1,37 @@
+name: Onside Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily early morning UTC
+    - cron: '30 5 * * *'
+    # Weekend afternoons UTC (matchday-ish)
+    - cron: '0 14 * * 6,0'
+
+concurrency:
+  group: onside-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Run pipeline
+        working-directory: pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python run_pipeline.py --skip-historical

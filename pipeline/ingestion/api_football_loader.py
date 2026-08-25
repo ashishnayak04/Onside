@@ -29,6 +29,7 @@ log = logging.getLogger("api_football")
 
 BASE_URL = "https://v3.football.api-sports.io"
 LEAGUE_ID_LA_LIGA = 140
+LEAGUE_ID_UCL = 2
 
 
 def _get_key() -> str:
@@ -56,7 +57,7 @@ def _get(client: requests.Session, path: str, params: dict) -> list[dict]:
     return body["response"]
 
 
-def _upsert_team(cur, team: dict) -> str | None:
+def _upsert_team(cur, team: dict, country: str = "Spain") -> str | None:
     name = team["name"]
     cur.execute("SELECT id FROM teams WHERE name = %s", (name,))
     row = cur.fetchone()
@@ -67,7 +68,7 @@ def _upsert_team(cur, team: dict) -> str | None:
         INSERT INTO teams (name, short_name, country, logo_url)
         VALUES (%s, %s, %s, %s) RETURNING id
         """,
-        (name, team.get("code"), "Spain", team.get("logo")),
+        (name, team.get("code"), country, team.get("logo")),
     )
     return cur.fetchone()[0]
 
@@ -75,8 +76,9 @@ def _upsert_team(cur, team: dict) -> str | None:
 def _upsert_match(cur, fx: dict) -> None:
     fixture = fx["fixture"]
     league = fx["league"]
-    home_id = _upsert_team(cur, fx["teams"]["home"])
-    away_id = _upsert_team(cur, fx["teams"]["away"])
+    country = league.get("country") or "Spain"
+    home_id = _upsert_team(cur, fx["teams"]["home"], country)
+    away_id = _upsert_team(cur, fx["teams"]["away"], country)
     goals = fx.get("goals") or {}
     status_short = (fixture.get("status") or {}).get("short", "")
     status_map = {"NS": "scheduled", "FT": "finished", "AET": "finished",
@@ -115,15 +117,15 @@ def _upsert_match(cur, fx: dict) -> None:
         )
 
 
-def run() -> None:
+def run(league_id: int = LEAGUE_ID_LA_LIGA) -> None:
     key = _get_key()
     client = requests.Session()
     client.headers.update({"x-apisports-key": key})
 
-    upcoming = _get(client, "/fixtures", {"league": LEAGUE_ID_LA_LIGA, "next": 20})
+    upcoming = _get(client, "/fixtures", {"league": league_id, "next": 20})
     log.info("Fetched %d upcoming fixtures", len(upcoming))
 
-    last = _get(client, "/fixtures", {"league": LEAGUE_ID_LA_LIGA, "last": 20})
+    last = _get(client, "/fixtures", {"league": league_id, "last": 20})
     log.info("Fetched %d recent results", len(last))
 
     with transaction() as conn:

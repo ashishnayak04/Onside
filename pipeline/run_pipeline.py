@@ -64,26 +64,33 @@ def step_load_historical(max_seasons: int | None = None) -> dict:
 # ===================================================================
 
 def step_ingest_live() -> dict:
-    """Ingest current-season fixtures from API-Football."""
-    from ingestion.api_football_client import ingest_fixtures, LEAGUE_IDS
+    """Ingest current-season fixtures from API-Football (La Liga + UCL)."""
+    import os
+
+    from ingestion.api_football_loader import run as ingest_live_run, LEAGUE_ID_LA_LIGA, LEAGUE_ID_UCL
 
     log.info("=" * 60)
     log.info("STEP 2: Ingesting live fixtures from API-Football")
     log.info("=" * 60)
 
-    # Check if API key is configured
-    key_row = fetch_one("SELECT value FROM system_config WHERE key = 'api_football_key'")
-    api_key = key_row["value"] if key_row else ""
+    # Check if API key is configured (env var wins, then DB config table)
+    api_key = os.environ.get("API_FOOTBALL_KEY", "")
+    if not api_key:
+        key_row = fetch_one("SELECT value FROM system_config WHERE key = 'api_football_key'")
+        api_key = key_row["value"] if key_row else ""
     if not api_key:
         log.warning("API-Football key not configured — skipping live ingestion")
         return {"status": "skipped", "reason": "no_api_key"}
 
-    try:
-        results = ingest_fixtures()
-        return {"status": "ingested", "results": results}
-    except Exception as exc:
-        log.error("Live ingestion failed: %s", exc)
-        return {"status": "error", "error": str(exc)}
+    results = {}
+    for label, league_id in (("la_liga", LEAGUE_ID_LA_LIGA), ("ucl", LEAGUE_ID_UCL)):
+        try:
+            ingest_live_run(league_id=league_id)
+            results[label] = "ok"
+        except Exception as exc:
+            log.error("Live ingestion failed for %s: %s", label, exc)
+            results[label] = f"error: {exc}"
+    return {"status": "ingested", "results": results}
 
 
 # ===================================================================
