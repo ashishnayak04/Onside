@@ -138,7 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(key);
 -- Insert default super admin (password: admin123)
 -- bcrypt hash of 'admin123'
 INSERT INTO users (email, password_hash, name, role) VALUES
-  ('admin@onside.io', '$2a$10$rQEY7zQG1rPvYBx8QxqPZeGZJ3f3G5J6J7J8J9J0J1J2J3J4J5J6', 'Super Admin', 'super_admin')
+  ('admin@onside.io', '$2b$10$AD3RCLTaG4ATi2E00fg5YOZKGLhvntNkn1fJgpnSdRDk4xF9hSDEG', 'Super Admin', 'super_admin')
 ON CONFLICT (email) DO NOTHING;
 
 -- Insert default system config
