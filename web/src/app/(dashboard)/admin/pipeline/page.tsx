@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface ConfigEntry {
   key: string;
@@ -88,7 +89,7 @@ export default function PipelinePage() {
         </p>
         <p className="text-sm text-[#71717a] leading-relaxed mt-3">
           To modify pipeline settings, API keys, model parameters, or competition selections,
-          use the <a href="/admin/config" className="text-[#22c55e] hover:underline">System Config</a> page.
+          use the <Link href="/admin/config" className="text-[#22c55e] hover:underline">System Config</Link> page.
           All settings are stored in the database and take effect without code changes.
         </p>
       </div>

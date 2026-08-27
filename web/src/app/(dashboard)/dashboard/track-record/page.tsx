@@ -28,8 +28,8 @@ export default async function TrackRecordPage() {
       FROM track_record
     `);
     if (s) stats = s;
-  } catch {
-    // DB may not be connected
+  } catch (e) {
+    console.error("Track record query failed:", e);
   }
 
   return (

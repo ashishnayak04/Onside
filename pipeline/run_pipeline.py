@@ -29,7 +29,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from db.connection import fetch_all, fetch_one
-from models.baseline_poisson import DixonColesModel, MODEL_VERSION
 
 log = logging.getLogger("pipeline")
 
@@ -162,34 +161,26 @@ def step_build_features() -> list[dict]:
 # ===================================================================
 
 def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
-    """Fit the Dixon-Coles model on historical data and write predictions."""
-    from db.write_predictions import write_prediction, write_player_predictions_batch
+    """Write match predictions using the hybrid DC-SOT generator, then add player props."""
+    from db.write_predictions import write_player_predictions_batch
+    from predict.generator import generate as generator_generate
 
     log.info("=" * 60)
-    log.info("STEP 4: Running Dixon-Coles model and writing predictions")
+    log.info("STEP 4: Running DC-SOT hybrid model and writing predictions")
     log.info("=" * 60)
 
     if not fixtures_with_features:
         log.info("No fixtures to predict")
         return 0
 
-    # Load training data
-    all_historical = fetch_all(
-        "SELECT home_team, away_team, home_score, away_score, match_date "
-        "FROM historical_matches ORDER BY match_date"
-    )
-    if not all_historical:
-        log.error("No historical data for model training")
+    # Delegate match-level predictions to the generator (DC-SOT hybrid with recency)
+    count = generator_generate()
+    log.info("Generator wrote %d match predictions", count)
+
+    if count == 0:
         return 0
 
-    import pandas as pd
-    train_df = pd.DataFrame(all_historical)
-
-    # Fit model
-    model = DixonColesModel()
-    model.fit(train_df)
-
-    # Get all players for basic player predictions
+    # Now add player predictions for any predictions that lack them
     all_players = fetch_all("""
         SELECT p.id, p.name, p.team_id, p.position, t.name AS team_name
         FROM players p
@@ -201,59 +192,40 @@ def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
         if team:
             players_by_team.setdefault(team, []).append(p)
 
-    # Predict each fixture
-    count = 0
-    for fx in fixtures_with_features:
-        home_team = fx["home_team"]
-        away_team = fx["away_team"]
-        match_id = fx["match_id"]
+    # Find predictions that have no player_predictions yet
+    preds_without_players = fetch_all("""
+        SELECT p.id AS prediction_id, p.predicted_home_score, p.predicted_away_score,
+               ht.name AS home_team, at.name AS away_team
+        FROM predictions p
+        JOIN matches m ON p.match_id = m.id
+        LEFT JOIN teams ht ON m.home_team_id = ht.id
+        LEFT JOIN teams at ON m.away_team_id = at.id
+        WHERE m.status = 'scheduled'
+          AND NOT EXISTS (
+              SELECT 1 FROM player_predictions pp WHERE pp.prediction_id = p.id
+          )
+    """)
 
-        # Check if prediction already exists
-        existing = fetch_one(
-            "SELECT id FROM predictions WHERE match_id = %s", (match_id,)
-        )
-        if existing:
-            log.debug("Prediction already exists for match %s — skipping", match_id)
-            continue
-
-        # Build feature dicts for the model
-        home_features = {k.replace("home_", ""): v for k, v in fx.items() if k.startswith("home_") and k != "home_team"}
-        away_features = {k.replace("away_", ""): v for k, v in fx.items() if k.startswith("away_") and k != "away_team"}
-
-        pred = model.predict(home_team, away_team, home_features, away_features)
-
-        prediction_id = write_prediction(
-            match_id=match_id,
-            predicted_home_score=pred.predicted_home_score,
-            predicted_away_score=pred.predicted_away_score,
-            predicted_outcome=pred.outcome,
-            home_win_prob=pred.home_win_prob,
-            draw_prob=pred.draw_prob,
-            away_win_prob=pred.away_win_prob,
-            confidence=pred.confidence,
-            feature_snapshot=pred.feature_snapshot,
-            model_version=MODEL_VERSION,
-        )
-
-        # Basic player predictions: distribute goal probability by team
-        home_players = players_by_team.get(home_team, [])
-        away_players = players_by_team.get(away_team, [])
+    player_count = 0
+    for pred in preds_without_players:
+        home_players = players_by_team.get(pred["home_team"] or "", [])
+        away_players = players_by_team.get(pred["away_team"] or "", [])
+        lam = float(pred["predicted_home_score"] or 0)
+        mu = float(pred["predicted_away_score"] or 0)
 
         player_preds = []
-        if home_players and pred.predicted_home_score > 0:
-            # Simple: strikers get higher probability
+        if home_players and lam > 0:
             for p in home_players:
                 pos = (p.get("position") or "").upper()
                 if "FWD" in pos or "STRIKER" in pos or "ATT" in pos:
-                    gp = min(0.4, pred.predicted_home_score / max(len(home_players), 1) * 3)
+                    gp = min(0.4, lam / max(len(home_players), 1) * 3)
                     ap = gp * 0.4
                 elif "MID" in pos:
-                    gp = min(0.15, pred.predicted_home_score / max(len(home_players), 1) * 1.5)
+                    gp = min(0.15, lam / max(len(home_players), 1) * 1.5)
                     ap = gp * 0.6
                 else:
-                    gp = min(0.05, pred.predicted_home_score / max(len(home_players), 1) * 0.5)
+                    gp = min(0.05, lam / max(len(home_players), 1) * 0.5)
                     ap = 0.01
-
                 player_preds.append({
                     "player_id": str(p["id"]),
                     "goal_prob": round(gp, 4),
@@ -261,19 +233,18 @@ def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
                     "shots_on_target_prob": round(min(gp * 2.5, 0.6), 4),
                 })
 
-        if away_players and pred.predicted_away_score > 0:
+        if away_players and mu > 0:
             for p in away_players:
                 pos = (p.get("position") or "").upper()
                 if "FWD" in pos or "STRIKER" in pos or "ATT" in pos:
-                    gp = min(0.35, pred.predicted_away_score / max(len(away_players), 1) * 3)
+                    gp = min(0.35, mu / max(len(away_players), 1) * 3)
                     ap = gp * 0.4
                 elif "MID" in pos:
-                    gp = min(0.12, pred.predicted_away_score / max(len(away_players), 1) * 1.5)
+                    gp = min(0.12, mu / max(len(away_players), 1) * 1.5)
                     ap = gp * 0.6
                 else:
-                    gp = min(0.04, pred.predicted_away_score / max(len(away_players), 1) * 0.5)
+                    gp = min(0.04, mu / max(len(away_players), 1) * 0.5)
                     ap = 0.01
-
                 player_preds.append({
                     "player_id": str(p["id"]),
                     "goal_prob": round(gp, 4),
@@ -282,13 +253,10 @@ def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
                 })
 
         if player_preds:
-            write_player_predictions_batch(prediction_id, player_preds)
+            write_player_predictions_batch(pred["prediction_id"], player_preds)
+            player_count += 1
 
-        count += 1
-        log.info("Predicted: %s vs %s → %s (%.1f%% confidence)",
-                 home_team, away_team, pred.outcome, pred.confidence * 100)
-
-    log.info("Wrote %d new predictions", count)
+    log.info("Added player predictions for %d matches", player_count)
     return count
 
 

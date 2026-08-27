@@ -14,8 +14,8 @@ export default async function PredictionsPage() {
       ORDER BY m.match_date DESC
       LIMIT 50
     `);
-  } catch {
-    // DB may not be connected
+  } catch (e) {
+    console.error("Predictions query failed:", e);
   }
 
   return (

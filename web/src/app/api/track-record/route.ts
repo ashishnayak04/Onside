@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         COUNT(*) as total_predictions,
         COUNT(*) FILTER (WHERE was_correct = true) as correct_predictions,
-        ROUND(COUNT(*) FILTER (WHERE was_correct = true)::decimal / NULLIF(COUNT(*), 0), 4) as accuracy
+        ROUND(COUNT(*) FILTER (WHERE was_correct = true)::decimal / NULLIF(COUNT(*), 0) * 100, 1) as accuracy
       FROM track_record
     `);
 

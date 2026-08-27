@@ -131,6 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
 CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(match_id);
 CREATE INDEX IF NOT EXISTS idx_player_predictions_prediction ON player_predictions(prediction_id);
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_track_record_prediction_match ON track_record(prediction_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_track_record_match ON track_record(match_id);
 CREATE INDEX IF NOT EXISTS idx_system_config_category ON system_config(category);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(key);

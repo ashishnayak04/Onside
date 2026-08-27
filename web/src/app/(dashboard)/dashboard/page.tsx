@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export default async function DashboardHome() {
   let matches: Record<string, unknown>[] = [];
-  let stats = { total: 0, predicted: 0, accuracy: 0 };
+  let stats = { total: 0, correct: 0, accuracy: 0 };
   try {
     matches = await query(`
       SELECT m.*, ht.name as home_team_name, ht.short_name as home_short,
@@ -24,12 +24,12 @@ export default async function DashboardHome() {
     if (acc[0]) {
       stats = {
         total: parseInt(acc[0].total_predictions || "0", 10),
-        predicted: parseInt(acc[0].correct_predictions || "0", 10),
+        correct: parseInt(acc[0].correct_predictions || "0", 10),
         accuracy: parseFloat(String(acc[0].accuracy || "0")),
       };
     }
-  } catch {
-    // DB may not be connected
+  } catch (e) {
+    console.error("Dashboard query failed:", e);
   }
 
   return (

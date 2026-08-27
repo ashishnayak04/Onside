@@ -1,8 +1,10 @@
 """API-Football fixture ingestion for live predictions.
 
-Free plan: 100 requests/day, so this makes exactly two calls per run:
-  1. GET /fixtures?league=140&next=20   -> upcoming La Liga fixtures
-  2. GET /fixtures?league=140&last=20   -> recent results (fills scores)
+Free plan (no next/last): uses season + from/to date params to fetch:
+  1. GET /fixtures?league=140&season=YYYY&from=...&to=...  -> scheduled fixtures
+  2. GET /fixtures?league=140&season=YYYY&from=...&to=...  -> recent results
+
+Two calls per league (La Liga + UCL = 4 calls max, well within 100/day).
 
 Teams are upserted into ``teams``; fixtures into ``matches`` with
 external_id = "api:{fixtureId}" (idempotent upsert).
@@ -117,27 +119,42 @@ def _upsert_match(cur, fx: dict) -> None:
         )
 
 
-def run(league_id: int = LEAGUE_ID_LA_LIGA) -> None:
+def run(league_id: int = LEAGUE_ID_LA_LIGA, season: int | None = None) -> None:
+    import datetime as dt
+
     key = _get_key()
     client = requests.Session()
     client.headers.update({"x-apisports-key": key})
 
-    upcoming = _get(client, "/fixtures", {"league": league_id, "next": 20})
-    log.info("Fetched %d upcoming fixtures", len(upcoming))
+    today = dt.date.today()
+    if season is None:
+        season = today.year if today.month >= 8 else today.year - 1
 
-    last = _get(client, "/fixtures", {"league": league_id, "last": 20})
-    log.info("Fetched %d recent results", len(last))
+    season_start = f"{season}-08-01"
+    season_end = f"{season + 1}-06-01"
+    if season >= today.year:
+        date_from = today.isoformat()
+        date_to = min(dt.date.fromisoformat(season_end), today + dt.timedelta(days=90)).isoformat()
+    elif dt.date.fromisoformat(season_end) >= today:
+        date_from = (today - dt.timedelta(days=90)).isoformat()
+        date_to = today.isoformat()
+    else:
+        date_from = season_start
+        date_to = season_end
+
+    params = {"league": league_id, "season": season, "from": date_from, "to": date_to}
+    fixtures = _get(client, "/fixtures", params)
+    log.info("Fetched %d fixtures for season %d (%s to %s)", len(fixtures), season, date_from, date_to)
 
     with transaction() as conn:
         with conn.cursor() as cur:
-            for fx in last + upcoming:
+            for fx in fixtures:
                 _upsert_match(cur, fx)
 
-    finished = sum(1 for fx in last + upcoming
+    finished = sum(1 for fx in fixtures
                    if (fx["fixture"].get("status") or {}).get("short") in ("FT", "AET", "PEN"))
     log.info("Upserted %d fixtures (%d finished, %d scheduled)",
-             len(last) + len(upcoming), finished,
-             len(last) + len(upcoming) - finished)
+             len(fixtures), finished, len(fixtures) - finished)
 
 
 if __name__ == "__main__":

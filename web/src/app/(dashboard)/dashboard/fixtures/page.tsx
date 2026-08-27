@@ -14,8 +14,8 @@ export default async function FixturesPage() {
       LEFT JOIN predictions p ON p.match_id = m.id
       ORDER BY m.match_date ASC
     `);
-  } catch {
-    // DB may not be connected
+  } catch (e) {
+    console.error("Fixtures query failed:", e);
   }
 
   const grouped: Record<string, Record<string, unknown>[]> = {};
