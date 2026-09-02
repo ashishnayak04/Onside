@@ -1,24 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth-token";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("onside_token")?.value;
   const user = token ? verifyToken(token) : null;
 
-  // Public routes
-  const publicRoutes = ["/login", "/register", "/api/auth/login", "/api/auth/register"];
+  // Public routes (landing page at / is public; auth pages redirect authed users away)
+  const publicRoutes = ["/", "/login", "/register", "/api/auth/login", "/api/auth/register"];
   if (publicRoutes.includes(pathname)) {
+    if (pathname === "/") {
+      return NextResponse.next();
+    }
     if (user) {
       return NextResponse.redirect(new URL(user.role === "super_admin" ? "/admin" : "/dashboard", request.url));
     }
     return NextResponse.next();
-  }
-
-  // Root redirect
-  if (pathname === "/") {
-    if (!user) return NextResponse.redirect(new URL("/login", request.url));
-    return NextResponse.redirect(new URL(user.role === "super_admin" ? "/admin" : "/dashboard", request.url));
   }
 
   // Auth required for everything else

@@ -1,5 +1,16 @@
 # Onside — Pending Work State
-_Last updated: 2026-08-26. Resume from "NEXT UP" section._
+_Last updated: 2026-08-27. Next up: landing page build (separate brief). Resume item C (hosting) / D (prod cron) below._
+
+## DONE ✅
+15. **football-data.org loader (NEXT UP A)**: Built `pipeline/ingestion/football_data_org_loader.py` — v4 API current-season source (La Liga PD + UCL CL, also PL/BL1/SA/FL1). Token via env `FOOTBALL_DATA_ORG_KEY` or `system_config` key `football_data_org_key`; honors throttling headers (`x-requests-available-minute`, `X-RequestCounter-Reset`). Team upsert with diacritic/compat-name matching; `external_id = "fdorg:{id}"`.
+16. **football-data.org token registered**: Daniel (football-data.org) issued token `01c05…45d`; stored in `system_config` (key=`football_data_org_key`, secret). Ingested **La Liga 2026/27: 380 fixtures (18 finished + 362 scheduled)** and **UCL 2025/26: 189 fixtures (finished)**.
+17. **Live source switched**: `run_pipeline.py` step_ingest_live now prefers football-data.org, falls back to API-Football. Fixed `_config_value` to query DB with lowercase config keys.
+18. **Team dedup + merge**: First fd.org load created duplicate teams (fd names like "FC Barcelona"/"Club Atlético de Madrid" vs old API-football "Barcelona"/"Atletico Madrid"). Merged 12 duplicates (re-pointed matches/players, deleted old rows). Teams 98 → 86.
+19. **Name bridge for generator (NEXT UP B)**: Added fd.org→fit-time aliases in `predict/generator.py` (`Club Atlético de Madrid`→`Ath Madrid`, `RC Celta de Vigo`→`Celta`, `Real Racing Club de Santander`→`Santander`). Fixed date-type bug in `features/build_features.py` (date vs tz-aware datetime comparison).
+20. **End-to-end pipeline test with real current data (NEXT UP B)**: `python run_pipeline.py --skip-historical` — ingested 380+189 via fd.org, built features for 100 fixtures, **generated 365 predictions** for real current-season matches (e.g. Celta vs Osasuna, Barcelona vs Athletic). Verified 365 upcoming scheduled + 365 predictions in DB.
+
+## DONE ✅
+21. **Web auth fix (middleware→proxy) + end-to-end web verification**: Next.js 16 `middleware.ts` runs in the **Edge runtime**, where `jsonwebtoken` (Node crypto) silently fails → `verifyToken()` returned `null` for any valid token → **all authenticated routes redirected to `/login`** (a pre-existing app bug). Fixed by migrating `src/middleware.ts` → `src/proxy.ts` (Next 16 Node-runtime convention, which the deprecation warning recommends). Verify: `POST /api/auth/login` → `/admin` redirect for super_admin; `/api/fixtures` & `/api/predictions` return real data (50-row LIMIT each), e.g. Osasuna vs Valencia home_win 0.45, model `dc-sot-hybrid-w0.4-xi0.004-v1`. Removed leftover temp `web/libtest.mjs`.
 
 ## DONE ✅
 11. **API-Football free plan ingestion**: Fixed `api_football_loader.py` to use season+from/to instead of next/last (unsupported on free plan). Free plan only allows seasons 2022-2024. Ingested season 2024: **380 La Liga + 223 UCL fixtures** (all finished, since season 2024/2025 is over).
@@ -36,19 +47,8 @@ _Last updated: 2026-08-26. Resume from "NEXT UP" section._
 
 ## NEXT UP ⏳
 
-### A. football-data.org loader for current season
-Build `pipeline/ingestion/football_data_loader.py` to replace API-Football for live ingestion:
-- Free: 10 req/min, no credit card, current season
-- Covers: La Liga (PD), UCL (CL), Premier League (PL), Bundesliga, Serie A, Ligue 1
-- Endpoints: `/v4/competitions/{code}/matches` (fixtures + results)
-- Update `run_pipeline.py` step_ingest_live to use new loader
-- Sign up: https://www.football-data.org/client/register
-
-### B. End-to-end test with current data
-Once football-data.org loader is built:
-1. Run pipeline with current season data
-2. Verify upcoming fixtures appear in dashboard
-3. Verify predictions generated for real scheduled matches
+### A. football-data.org loader for current season — ✅ DONE (see DONE 15-20)
+Loader, token, source switch, team dedup, name bridge, and end-to-end test all complete.
 
 ### C. Hosting / deployment
 Web app (Next.js 16 + PostgreSQL) needs a host. Options:

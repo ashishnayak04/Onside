@@ -52,6 +52,10 @@ API_TO_FD = {
     "UD Las Palmas": "Las Palmas",
     "Las Palmas": "Las Palmas",
     "Real Oviedo": "Oviedo",
+    # football-data.org names (current-season live source) -> football-data.co.uk fit names
+    "Club Atlético de Madrid": "Ath Madrid",
+    "RC Celta de Vigo": "Celta",
+    "Real Racing Club de Santander": "Santander",
 }
 
 

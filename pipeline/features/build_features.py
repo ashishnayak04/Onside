@@ -16,7 +16,7 @@ Usage
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -203,6 +203,15 @@ def build_features_for_fixture(
     season : str, optional
         Current season string for season-level stats.
     """
+    # Normalize all match_date values to timestamp-naive datetimes so date-typed
+    # historical rows and tz-aware fixture datetimes compare cleanly.
+    df = df.copy()
+    df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce")
+    if df["match_date"].dt.tz is not None:
+        df["match_date"] = df["match_date"].dt.tz_localize(None)
+    if getattr(match_date, "tzinfo", None) is not None:
+        match_date = match_date.astimezone(timezone.utc).replace(tzinfo=None)
+
     # Filter to only matches before this fixture date for form/rest
     prior = df[df["match_date"] < match_date]
 

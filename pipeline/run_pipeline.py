@@ -62,23 +62,44 @@ def step_load_historical(max_seasons: int | None = None) -> dict:
 # Step 2: Live data ingestion
 # ===================================================================
 
-def step_ingest_live() -> dict:
-    """Ingest current-season fixtures from API-Football (La Liga + UCL)."""
+def _config_value(key: str) -> str:
+    """Read a config value from env or system_config table."""
     import os
+
+    env = os.environ.get(key)
+    if env:
+        return env
+    row = fetch_one("SELECT value FROM system_config WHERE key = %s", (key.lower(),))
+    return row["value"] if row and row["value"] else ""
+
+
+def step_ingest_live() -> dict:
+    """Ingest current-season fixtures.
+
+    Primary source is football-data.org (recommended free current-season API).
+    Falls back to API-Football when no football-data.org token is configured.
+    """
+    log.info("=" * 60)
+    log.info("STEP 2: Ingesting live fixtures (football-data.org, fallback API-Football)")
+    log.info("=" * 60)
+
+    if _config_value("FOOTBALL_DATA_ORG_KEY"):
+        from ingestion.football_data_org_loader import run as fdorg_run
+
+        results = fdorg_run()
+        if results:
+            ok = {c: r.get("count", 0) for c, r in results.items() if "error" not in r}
+            errs = {c: r["error"] for c, r in results.items() if "error" in r}
+            if ok:
+                return {"status": "ingested", "source": "football-data.org", "results": ok, "errors": errs}
+        log.warning("football-data.org ingestion produced no results — falling back to API-Football")
+    else:
+        log.warning("football-data.org token not configured — using API-Football fallback")
 
     from ingestion.api_football_loader import run as ingest_live_run, LEAGUE_ID_LA_LIGA, LEAGUE_ID_UCL
 
-    log.info("=" * 60)
-    log.info("STEP 2: Ingesting live fixtures from API-Football")
-    log.info("=" * 60)
-
-    # Check if API key is configured (env var wins, then DB config table)
-    api_key = os.environ.get("API_FOOTBALL_KEY", "")
-    if not api_key:
-        key_row = fetch_one("SELECT value FROM system_config WHERE key = 'api_football_key'")
-        api_key = key_row["value"] if key_row else ""
-    if not api_key:
-        log.warning("API-Football key not configured — skipping live ingestion")
+    if not _config_value("API_FOOTBALL_KEY"):
+        log.warning("API-Football key not configured either — skipping live ingestion")
         return {"status": "skipped", "reason": "no_api_key"}
 
     results = {}
@@ -89,7 +110,7 @@ def step_ingest_live() -> dict:
         except Exception as exc:
             log.error("Live ingestion failed for %s: %s", label, exc)
             results[label] = f"error: {exc}"
-    return {"status": "ingested", "results": results}
+    return {"status": "ingested", "source": "api-football", "results": results}
 
 
 # ===================================================================
