@@ -217,7 +217,8 @@ def update_track_record(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT predicted_outcome FROM predictions WHERE id = %s",
+                "SELECT predicted_outcome, home_win_prob, draw_prob, away_win_prob, "
+                "confidence FROM predictions WHERE id = %s",
                 (prediction_id,),
             )
             row = cur.fetchone()
@@ -225,23 +226,31 @@ def update_track_record(
                 log.warning("Prediction %s not found — cannot update track record", prediction_id)
                 return ""
             predicted_outcome = row[0]
+            hwp, dp, awp = row[1], row[2], row[3]
+            confidence = row[4]
 
             was_correct = predicted_outcome == actual_outcome
 
             cur.execute("""
                 INSERT INTO track_record
                     (prediction_id, match_id, predicted_outcome, actual_outcome,
-                     was_correct, actual_home_score, actual_away_score)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     was_correct, actual_home_score, actual_away_score,
+                     home_win_prob, draw_prob, away_win_prob, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (prediction_id, match_id) DO UPDATE SET
                     actual_outcome = EXCLUDED.actual_outcome,
                     was_correct = EXCLUDED.was_correct,
                     actual_home_score = EXCLUDED.actual_home_score,
-                    actual_away_score = EXCLUDED.actual_away_score
+                    actual_away_score = EXCLUDED.actual_away_score,
+                    home_win_prob = EXCLUDED.home_win_prob,
+                    draw_prob = EXCLUDED.draw_prob,
+                    away_win_prob = EXCLUDED.away_win_prob,
+                    confidence = EXCLUDED.confidence
                 RETURNING id
             """, (
                 prediction_id, match_id, predicted_outcome, actual_outcome,
                 was_correct, actual_home_score, actual_away_score,
+                hwp, dp, awp, confidence,
             ))
             row_id = str(cur.fetchone()[0])
             conn.commit()
@@ -260,7 +269,8 @@ def sync_track_record() -> int:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT p.id AS prediction_id, p.match_id, p.predicted_outcome,
-                       m.home_score, m.away_score
+                       m.home_score, m.away_score,
+                       p.home_win_prob, p.draw_prob, p.away_win_prob, p.confidence
                 FROM predictions p
                 JOIN matches m ON p.match_id = m.id
                 WHERE m.status = 'finished'
@@ -272,7 +282,8 @@ def sync_track_record() -> int:
             """)
             rows = cur.fetchall()
 
-            for pred_id, match_id, predicted_outcome, home_score, away_score in rows:
+            for pred_id, match_id, predicted_outcome, home_score, away_score, \
+                    hwp, dp, awp, confidence in rows:
                 if home_score > away_score:
                     actual_outcome = OUTCOME_HOME_WIN
                 elif home_score < away_score:
@@ -285,11 +296,13 @@ def sync_track_record() -> int:
                 cur.execute("""
                     INSERT INTO track_record
                         (prediction_id, match_id, predicted_outcome, actual_outcome,
-                         was_correct, actual_home_score, actual_away_score)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         was_correct, actual_home_score, actual_away_score,
+                         home_win_prob, draw_prob, away_win_prob, confidence)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     pred_id, match_id, predicted_outcome, actual_outcome,
                     was_correct, home_score, away_score,
+                    hwp, dp, awp, confidence,
                 ))
                 count += 1
 

@@ -25,38 +25,19 @@ from scipy.special import gammaln
 
 from db.connection import fetch_all, transaction
 from models.baseline_poisson import DixonColesModel
+from predict.calibrator import (load_draw_bonus, pick_outcome,
+                                load_temperature, apply_temperature,
+                                load_market_blend, market_probs,
+                                blend_with_market)
+from mapping.team_registry import resolve_fit_name
 
 log = logging.getLogger("generator")
 
-MODEL_VERSION = "dc-sot-hybrid-w0.4-xi0.004-v1"
+MODEL_VERSION = "dc-sot-hybrid-w0.4-xi0.004-calib-v1"
 BLEND_W = 0.4
 RECENCY_XI = 0.004
 
 LABELS = ["home_win", "draw", "away_win"]
-
-# API-Football team name -> football-data.co.uk team name
-API_TO_FD = {
-    "Atletico Madrid": "Ath Madrid",
-    "Athletic Club": "Ath Bilbao",
-    "Real Sociedad": "Sociedad",
-    "Real Betis": "Betis",
-    "Rayo Vallecano": "Vallecano",
-    "Celta Vigo": "Celta",
-    "Espanyol": "Espanol",
-    "Deportivo Alaves": "Alaves",
-    "Alaves": "Alaves",
-    "Real Valladolid": "Valladolid",
-    "Valladolid": "Valladolid",
-    "RCD Mallorca": "Mallorca",
-    "Mallorca": "Mallorca",
-    "UD Las Palmas": "Las Palmas",
-    "Las Palmas": "Las Palmas",
-    "Real Oviedo": "Oviedo",
-    # football-data.org names (current-season live source) -> football-data.co.uk fit names
-    "Club Atlético de Madrid": "Ath Madrid",
-    "RC Celta de Vigo": "Celta",
-    "Real Racing Club de Santander": "Santander",
-}
 
 
 def _poisson_matrix(lam: float, mu: float, max_goals: int = 8) -> np.ndarray:
@@ -92,9 +73,15 @@ def fit_models() -> tuple[DixonColesModel, DixonColesModel | None, float | None]
     s_model = None
     conv = None
     if len(sot_df) >= 200:
-        sot_df["home_score"] = sot_df["home_sot"].astype(int)
-        sot_df["away_score"] = sot_df["away_sot"].astype(int)
-        s_model = DixonColesModel(recency_xi=RECENCY_XI)
+        # Fit the SOT model with a FIXED rho=0 (no Dixon-Coles low-score
+        # correlation adjustment). SOT is a higher-count distribution
+        # (values ~1-17) and its few 0-0/1-1 rows drive the fitted rho to its
+        # -1 bound, a degenerate fit. We only need the attack/defense rates
+        # from this model, so disabling rho is both safer and stable.
+        # Keep SOT as floats (e.g. 4.7) rather than ints so nothing truncates.
+        sot_df["home_score"] = sot_df["home_sot"].astype(float)
+        sot_df["away_score"] = sot_df["away_sot"].astype(float)
+        s_model = DixonColesModel(recency_xi=RECENCY_XI, rho=0.0)
         s_model.fit(sot_df)
         conv = float(df["home_score"].sum() + df["away_score"].sum()) / float(
             sot_df["home_sot"].sum() + sot_df["away_sot"].sum()
@@ -102,26 +89,53 @@ def fit_models() -> tuple[DixonColesModel, DixonColesModel | None, float | None]
     return g_model, s_model, conv
 
 
+def _sanitize_snapshot(data) -> dict:
+    """Recursively coerce feature values to JSON-serializable primitives and
+    round floats, dropping non-serializable nested containers."""
+    def coerce(v):
+        if isinstance(v, (bool, int, str)) or v is None:
+            return v
+        if isinstance(v, float):
+            return round(float(v), 3)
+        if isinstance(v, dict):
+            again = {k: coerce(x) for k, x in v.items()}
+            return {k: x for k, x in again.items() if x is not None}
+        return None
+
+    out = coerce(data)
+    return out if isinstance(out, dict) else {}
+
+
 def resolve_fd_name(api_name: str, known_teams: list[str]) -> str:
-    if api_name in API_TO_FD:
-        return API_TO_FD[api_name]
-    if api_name in known_teams:
-        return api_name
-    import difflib
-    close = difflib.get_close_matches(api_name.lower(), [t.lower() for t in known_teams], n=1, cutoff=0.6)
-    if close:
-        return known_teams[[t.lower() for t in known_teams].index(close[0])]
-    log.warning("No fd-name match for '%s' — using as-is", api_name)
-    return api_name
+    return resolve_fit_name(api_name, known_teams)
 
 
-def generate() -> int:
+def generate(features_by_match: dict[str, dict] | None = None) -> int:
+    """Generate and upsert predictions for all scheduled matches.
+
+    Parameters
+    ----------
+    features_by_match : dict[str, dict] | None
+        Optional mapping of ``match_id`` (as str) -> dict of engineered
+        features (rolling form, h2h, rest days, splits ...). When present
+        these are merged into each prediction's ``feature_snapshot`` for
+        explainability. Falls back to the model's own minimal snapshot.
+    """
     g_model, s_model, conv = fit_models()
     known_teams = sorted(set(g_model.attack) | set(g_model.defense))
 
+    # The calibrated decision rule: learned from past track-record results so
+    # draws (and wins) are called at realistic rates instead of never.
+    draw_bonus = load_draw_bonus()
+    temperature = load_temperature()
+    market_w = load_market_blend()
+    log.info("Using draw bonus %.3f, temperature %.2f, market blend %.2f",
+             draw_bonus, temperature, market_w)
+
     fixtures = fetch_all(
         """
-        SELECT m.id, m.match_date, ht.name AS home_team, at.name AS away_team
+        SELECT m.id, m.match_date, ht.name AS home_team, at.name AS away_team,
+               m.odds_home, m.odds_draw, m.odds_away
         FROM matches m
         JOIN teams ht ON m.home_team_id = ht.id
         JOIN teams at ON m.away_team_id = at.id
@@ -150,10 +164,30 @@ def generate() -> int:
                     mu = math.exp((1 - BLEND_W) * math.log(mu_g)
                                   + BLEND_W * (math.log(mu_s) + math.log(conv)))
 
-                p_home, p_draw, p_away = outcome_probs(lam, mu)
-                probs = np.array([p_home, p_draw, p_away])
-                pred_outcome = LABELS[int(np.argmax(probs))]
-                confidence = float(probs.max())
+                probs = np.array(outcome_probs(lam, mu))
+
+                # Probability calibration (temperature) then optional market blend.
+                calib = apply_temperature(probs.reshape(1, -1), float(temperature))[0]
+                mkt = market_probs(fx.get("odds_home"), fx.get("odds_draw"),
+                                   fx.get("odds_away"))
+                if mkt is not None:
+                    calib = blend_with_market(calib, mkt, float(market_w))
+
+                p_home, p_draw, p_away = float(calib[0]), float(calib[1]), float(calib[2])
+                pred_outcome = pick_outcome(p_home, p_draw, p_away, draw_bonus)
+                confidence = float(max(p_home, p_draw, p_away))
+
+                snapshot = {
+                    "lambda": round(lam, 3), "mu": round(mu, 3),
+                    "blend_w": BLEND_W, "recency_xi": RECENCY_XI,
+                    "temperature": round(float(temperature), 3),
+                    "market_blend_w": round(float(market_w), 3),
+                }
+                if mkt is not None:
+                    snapshot["market_probs"] = [round(float(x), 4) for x in mkt]
+                engineered = (features_by_match or {}).get(str(fx["id"]))
+                if engineered:
+                    snapshot["engineered"] = _sanitize_snapshot(engineered)
 
                 cur.execute("DELETE FROM predictions WHERE match_id = %s AND model_version = %s",
                             (fx["id"], MODEL_VERSION))
@@ -174,16 +208,13 @@ def generate() -> int:
                         round(p_draw, 4),
                         round(p_away, 4),
                         round(confidence, 4),
-                        json.dumps(
-                            {"lambda": round(lam, 3), "mu": round(mu, 3),
-                             "blend_w": BLEND_W, "recency_xi": RECENCY_XI}
-                        ),
+                        json.dumps(snapshot),
                         MODEL_VERSION,
                     ),
                 )
                 n_new += 1
-                log.info("%s vs %s -> %.2f/%.2f xG, P(H/D/A)=%.2f/%.2f/%.2f [%s]",
-                         fx["home_team"], fx["away_team"], lam, mu,
+                log.info("%s vs %s -> P(H/D/A)=%.2f/%.2f/%.2f [%s]",
+                         fx["home_team"], fx["away_team"],
                          p_home, p_draw, p_away, pred_outcome)
     return n_new
 

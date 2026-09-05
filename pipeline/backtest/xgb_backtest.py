@@ -170,7 +170,10 @@ def fit_dc_sot(df: pd.DataFrame):
             home_score=sot_df["home_sot"].astype(float),
             away_score=sot_df["away_sot"].astype(float),
         )
-        s_model = DixonColesModel(recency_xi=RECENCY_XI)
+        # FIXED rho=0: mirrors predict/generator.py — SOT is a higher-count
+        # distribution whose low-score rows would otherwise drive rho to its
+        # -1 bound (degenerate fit).
+        s_model = DixonColesModel(recency_xi=RECENCY_XI, rho=0.0)
         s_model.fit(sot_df)
         conv = float(df["home_score"].sum() + df["away_score"].sum()) / float(
             sot_df["home_sot"].sum() + sot_df["away_sot"].sum()

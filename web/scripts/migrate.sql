@@ -111,6 +111,16 @@ CREATE TABLE IF NOT EXISTS id_mapping (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Canonical team-name registry (single source of truth for identity)
+CREATE TABLE IF NOT EXISTS team_aliases (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  alias VARCHAR(120) NOT NULL,
+  fit_name VARCHAR(120) NOT NULL,
+  source VARCHAR(50) NOT NULL DEFAULT 'team_registry',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_team_alias_source UNIQUE (alias, source)
+);
+
 -- Track record table
 CREATE TABLE IF NOT EXISTS track_record (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -121,6 +131,10 @@ CREATE TABLE IF NOT EXISTS track_record (
   was_correct BOOLEAN,
   actual_home_score INTEGER,
   actual_away_score INTEGER,
+  home_win_prob DECIMAL(5,4),
+  draw_prob DECIMAL(5,4),
+  away_win_prob DECIMAL(5,4),
+  confidence DECIMAL(5,4),
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -133,6 +147,15 @@ CREATE INDEX IF NOT EXISTS idx_player_predictions_prediction ON player_predictio
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_track_record_prediction_match ON track_record(prediction_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_track_record_match ON track_record(match_id);
+
+-- Ensure the feedback (calibration) columns exist even on already-created tables.
+DO $$
+BEGIN
+  ALTER TABLE track_record ADD COLUMN IF NOT EXISTS home_win_prob DECIMAL(5,4);
+  ALTER TABLE track_record ADD COLUMN IF NOT EXISTS draw_prob DECIMAL(5,4);
+  ALTER TABLE track_record ADD COLUMN IF NOT EXISTS away_win_prob DECIMAL(5,4);
+  ALTER TABLE track_record ADD COLUMN IF NOT EXISTS confidence DECIMAL(5,4);
+END $$;
 CREATE INDEX IF NOT EXISTS idx_system_config_category ON system_config(category);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(key);
 

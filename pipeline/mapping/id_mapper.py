@@ -84,17 +84,6 @@ def map_teams() -> int:
             """)
             historical_names = [row[0] for row in cur.fetchall()]
 
-            # Also get teams from matches table that have external_ids
-            cur.execute("""
-                SELECT DISTINCT ht.name, t.id
-                FROM matches m
-                JOIN teams t ON m.home_team_id = t.id
-                UNION
-                SELECT DISTINCT at.name, t.id
-                FROM matches m
-                JOIN teams t ON m.away_team_id = t.id
-            """)
-
             for hist_name in historical_names:
                 matched = _match_team(hist_name, db_team_names)
                 if not matched:

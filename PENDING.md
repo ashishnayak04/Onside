@@ -1,5 +1,14 @@
 # Onside — Pending Work State
-_Last updated: 2026-08-27. Next up: landing page build (separate brief). Resume item C (hosting) / D (prod cron) below._
+_Last updated: 2026-09-05._
+
+## DONE ✅
+23. **Temperature calibration + market-odds blend (probability calibration)**:
+    - `pipeline/predict/calibrator.py`: added `learn_temperature` (leakage-free holdout — fits ONLY on seasons before the newest ≥100-match La Liga season, scans t∈[0.5,2.0] by 0.05 to minimize log-loss on the holdout), `apply_temperature` (t<1 sharpens), `load/store_temperature` (key `model_temperature`), plus market odds helpers `market_probs` (de-vig), `blend_with_market` (geometric blend), `load/store_market_blend` (key `model_market_blend_w`, default 0.25).
+    - Fixed swapped-tuple bug in the temperature scan (`best_ll, best_t = float(t), ll` had t and ll inverted, freezing selection at the first improvement).
+    - `generator.py` now loads persisted temperature + market blend and applies them to outcome probs before `pick_outcome`; fixtures query pulls `m.odds_home/odds_draw/odds_away`; snapshot records `temperature` and `market_blend_w`.
+    - `run_pipeline.py`: added **Step 3b `step_calibrate_temperature`** (learn+store) after promote_finished.
+    - VERIFIED: learned temperature **0.85** (holdout 2025/26, n=380, base LL 0.9889 → 0.9870); full pipeline run writes 494 predictions without error.
+24. **id_mapping reconciliation (P0 loose end)**: `pipeline/mapping/id_mapper.py` existed but was never run and contained a dead/buggy query (referenced non-existent `ht`/`at` aliases) — removed it. Wired `step_map_ids` (**Step 6b**) into `run_pipeline.py`. VERIFIED: **42 team + 17 player** mappings inserted; table no longer empty.
 
 ## DONE ✅
 15. **football-data.org loader (NEXT UP A)**: Built `pipeline/ingestion/football_data_org_loader.py` — v4 API current-season source (La Liga PD + UCL CL, also PL/BL1/SA/FL1). Token via env `FOOTBALL_DATA_ORG_KEY` or `system_config` key `football_data_org_key`; honors throttling headers (`x-requests-available-minute`, `X-RequestCounter-Reset`). Team upsert with diacritic/compat-name matching; `external_id = "fdorg:{id}"`.
@@ -44,6 +53,13 @@ _Last updated: 2026-08-27. Next up: landing page build (separate brief). Resume 
 - **M4**: Removed unused `export default pool` from `lib/db.ts`
 - **M5**: Fixed `/api/track-record` accuracy from 0-1 to 0-100% (consistent with dashboard)
 - **M7**: Added `console.error()` logging to 5 server component catch blocks that silently swallowed DB errors
+
+## DONE ✅
+22. **Draw calibration + feedback learning loop**: The model picked `argmax`, so it labelled a draw ~0.2% of the time (1/509) though football draws ~25% — a real miscalibration. Fixed with a **learned draw bonus** applied at decision time only (reported probs untouched):
+    - New `pipeline/predict/calibrator.py`: learns the bonus from track-record (prob, outcome) pairs, optimizing accuracy and closing the gap to the observed draw rate; persisted in `system_config` key `model_draw_bonus`.
+    - `track_record` now stores `home_win_prob/draw_prob/away_win_prob/confidence` (schema + backfilled 14 rows) so the loop has the model's own past probabilities.
+    - `generator.py` uses `pick_outcome()` (Model version → `dc-sot-hybrid-w0.4-xi0.004-calib-v1`); `run_pipeline.py` adds **Step 6 calibration** after track-record sync.
+    - VERIFIED: draw labels now **96/495 (19.4%)** vs 1 before; backtest still 51.8% acc / LL 1.0011 (no regression, probabilities unchanged). As matches finish and fill track_record, the bonus auto-adapts.
 
 ## NEXT UP ⏳
 

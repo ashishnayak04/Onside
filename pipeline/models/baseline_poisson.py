@@ -123,8 +123,9 @@ class DixonColesModel:
         # Precompute arrays once — the likelihood below is fully vectorized
         home_idx = df["home_team"].map(team_idx).to_numpy(dtype=np.intp)
         away_idx = df["away_team"].map(team_idx).to_numpy(dtype=np.intp)
-        hg = df["home_score"].to_numpy(dtype=np.int64)
-        ag = df["away_score"].to_numpy(dtype=np.int64)
+        score_dtype = np.float64 if dtype is float else np.int64
+        hg = df["home_score"].to_numpy(dtype=score_dtype)
+        ag = df["away_score"].to_numpy(dtype=score_dtype)
         log_hg_fact = gammaln(hg + 1.0)
         log_ag_fact = gammaln(ag + 1.0)
 

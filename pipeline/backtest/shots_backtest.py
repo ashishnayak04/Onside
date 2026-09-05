@@ -110,16 +110,16 @@ def run(test_season: str, xi: float = 0.004, signal: str = "sot") -> None:
         sub_df = fit_df.dropna(subset=sub_cols).copy()
         sub_df["home_score"] = sub_df["home_xg"].astype(float)
         sub_df["away_score"] = sub_df["away_xg"].astype(float)
-        s_model = DixonColesModel(recency_xi=xi)
+        s_model = DixonColesModel(recency_xi=xi, rho=0.0)
         s_model.fit(sot_df := sub_df)
         conv = 1.0
         log.info("xG model fitted on %d matches (rates used directly)", len(sot_df))
     else:
         sub_cols = ["home_sot", "away_sot"]
         sot_df = fit_df.dropna(subset=sub_cols).copy()
-        sot_df["home_score"] = sot_df["home_sot"].astype(int)
-        sot_df["away_score"] = sot_df["away_sot"].astype(int)
-        s_model = DixonColesModel(recency_xi=xi)
+        sot_df["home_score"] = sot_df["home_sot"].astype(float)
+        sot_df["away_score"] = sot_df["away_sot"].astype(float)
+        s_model = DixonColesModel(recency_xi=xi, rho=0.0)
         s_model.fit(sot_df)
 
         conv = float(fit_df["home_score"].sum() + fit_df["away_score"].sum()) / \

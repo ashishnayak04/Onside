@@ -114,7 +114,41 @@ def step_ingest_live() -> dict:
 
 
 # ===================================================================
-# Step 3: Build features
+# Step 3: Promote finished live matches into training history
+# ===================================================================
+
+def step_promote_finished() -> int:
+    """Copy finished live matches into historical_matches so the model can
+    learn from the current season (the self-improvement loop)."""
+    from ingestion.promote_results import promote_finished
+
+    log.info("=" * 60)
+    log.info("STEP 3: Promoting finished live matches into training history")
+    log.info("=" * 60)
+
+    return promote_finished()
+
+
+# ===================================================================
+# Step 3b: Calibrate probabilities (temperature) on recent history
+# ===================================================================
+
+def step_calibrate_temperature() -> dict:
+    """Learn the temperature that best calibrates probabilities on a held-out
+    recent season and persist it, so live predictions are temperature-scaled."""
+    from predict.calibrator import learn_temperature, store_temperature
+
+    log.info("=" * 60)
+    log.info("STEP 3b: Learning probability calibration (temperature)")
+    log.info("=" * 60)
+
+    t = learn_temperature()
+    store_temperature(t)
+    return {"temperature": t}
+
+
+# ===================================================================
+# Step 4: Build features
 # ===================================================================
 
 def step_build_features() -> list[dict]:
@@ -152,7 +186,15 @@ def step_build_features() -> list[dict]:
 
     # Convert to a format compatible with features module
     import pandas as pd
+    from predict.generator import resolve_fd_name
+
     hist_df = pd.DataFrame(all_historical)
+
+    # Resolve current-season (fd.org) team names to the fd.co.uk names used in
+    # historical_matches so rolling form / h2h / splits actually match rows.
+    known_teams = sorted(
+        set(hist_df["home_team"].tolist()) | set(hist_df["away_team"].tolist())
+    )
 
     fixtures_with_features = []
     for match in upcoming:
@@ -160,10 +202,13 @@ def step_build_features() -> list[dict]:
         if isinstance(match_date, str):
             match_date = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
 
+        home_fit = resolve_fd_name(match["home_team"], known_teams)
+        away_fit = resolve_fd_name(match["away_team"], known_teams)
+
         features = build_features_for_fixture(
             hist_df,
-            match["home_team"],
-            match["away_team"],
+            home_fit,
+            away_fit,
             match_date,
             match.get("season"),
         )
@@ -183,7 +228,6 @@ def step_build_features() -> list[dict]:
 
 def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
     """Write match predictions using the hybrid DC-SOT generator, then add player props."""
-    from db.write_predictions import write_player_predictions_batch
     from predict.generator import generate as generator_generate
 
     log.info("=" * 60)
@@ -194,26 +238,28 @@ def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
         log.info("No fixtures to predict")
         return 0
 
-    # Delegate match-level predictions to the generator (DC-SOT hybrid with recency)
-    count = generator_generate()
+    # Delegate match-level predictions to the generator (DC-SOT hybrid with
+    # recency). Wire the step-3 engineered features (rolling form, h2h, rest
+    # days, splits) into the generator so each prediction's feature_snapshot
+    # carries real explainability data instead of the bare model params.
+    features_by_match = {
+        str(f.get("match_id")): f for f in fixtures_with_features if f.get("match_id")
+    }
+    count = generator_generate(features_by_match=features_by_match)
     log.info("Generator wrote %d match predictions", count)
 
     if count == 0:
         return 0
 
-    # Now add player predictions for any predictions that lack them
-    all_players = fetch_all("""
-        SELECT p.id, p.name, p.team_id, p.position, t.name AS team_name
-        FROM players p
-        LEFT JOIN teams t ON p.team_id = t.id
-    """)
-    players_by_team: dict[str, list[dict]] = {}
-    for p in all_players:
-        team = p.get("team_name", "")
-        if team:
-            players_by_team.setdefault(team, []).append(p)
+    # Player props via the backtest-validated xG-share method (Understat).
+    # Supersedes the former naive position-cap heuristic. If Understat is
+    # unreachable the match predictions still succeed — we just log and skip.
+    from predict.player_props import fetch_players
+    from predict.player_props_sync import sync_players, write_props_for_predictions
 
-    # Find predictions that have no player_predictions yet
+    # Understat season-start year for the current season (e.g. 2026 -> 2026/27).
+    season_year = timezone_now().year
+
     preds_without_players = fetch_all("""
         SELECT p.id AS prediction_id, p.predicted_home_score, p.predicted_away_score,
                ht.name AS home_team, at.name AS away_team
@@ -228,57 +274,22 @@ def step_predict_and_write(fixtures_with_features: list[dict]) -> int:
     """)
 
     player_count = 0
-    for pred in preds_without_players:
-        home_players = players_by_team.get(pred["home_team"] or "", [])
-        away_players = players_by_team.get(pred["away_team"] or "", [])
-        lam = float(pred["predicted_home_score"] or 0)
-        mu = float(pred["predicted_away_score"] or 0)
-
-        player_preds = []
-        if home_players and lam > 0:
-            for p in home_players:
-                pos = (p.get("position") or "").upper()
-                if "FWD" in pos or "STRIKER" in pos or "ATT" in pos:
-                    gp = min(0.4, lam / max(len(home_players), 1) * 3)
-                    ap = gp * 0.4
-                elif "MID" in pos:
-                    gp = min(0.15, lam / max(len(home_players), 1) * 1.5)
-                    ap = gp * 0.6
-                else:
-                    gp = min(0.05, lam / max(len(home_players), 1) * 0.5)
-                    ap = 0.01
-                player_preds.append({
-                    "player_id": str(p["id"]),
-                    "goal_prob": round(gp, 4),
-                    "assist_prob": round(ap, 4),
-                    "shots_on_target_prob": round(min(gp * 2.5, 0.6), 4),
-                })
-
-        if away_players and mu > 0:
-            for p in away_players:
-                pos = (p.get("position") or "").upper()
-                if "FWD" in pos or "STRIKER" in pos or "ATT" in pos:
-                    gp = min(0.35, mu / max(len(away_players), 1) * 3)
-                    ap = gp * 0.4
-                elif "MID" in pos:
-                    gp = min(0.12, mu / max(len(away_players), 1) * 1.5)
-                    ap = gp * 0.6
-                else:
-                    gp = min(0.04, mu / max(len(away_players), 1) * 0.5)
-                    ap = 0.01
-                player_preds.append({
-                    "player_id": str(p["id"]),
-                    "goal_prob": round(gp, 4),
-                    "assist_prob": round(ap, 4),
-                    "shots_on_target_prob": round(min(gp * 2.5, 0.5), 4),
-                })
-
-        if player_preds:
-            write_player_predictions_batch(pred["prediction_id"], player_preds)
-            player_count += 1
+    if preds_without_players:
+        try:
+            understat_players = fetch_players(season_year)
+            player_index = sync_players(understat_players)
+            player_count = write_props_for_predictions(
+                understat_players, preds_without_players,
+                player_index=player_index)
+        except Exception as exc:
+            log.error("Player props (xG-share) generation failed: %s", exc)
 
     log.info("Added player predictions for %d matches", player_count)
     return count
+
+
+def timezone_now():
+    return datetime.now(timezone.utc)
 
 
 # ===================================================================
@@ -294,6 +305,43 @@ def step_sync_track_record() -> int:
     log.info("=" * 60)
 
     return sync_track_record()
+
+
+# ===================================================================
+# Step 5b: Reconcile external IDs (id_mapping)
+# ===================================================================
+
+def step_map_ids() -> dict:
+    """Populate id_mapping (team/player) by name-matching across sources."""
+    from mapping.id_mapper import run_mapping
+
+    log.info("=" * 60)
+    log.info("STEP 5b: Reconciling external IDs (id_mapping)")
+    log.info("=" * 60)
+
+    return run_mapping()
+
+
+# ===================================================================
+# Step 6: Calibration / feedback learning
+# ===================================================================
+
+def step_calibrate() -> dict:
+    """Learn from past results to calibrate the outcome decision rule.
+
+    Reads recent (probability, outcome) pairs from track_record, learns the
+    draw bonus that best fits the model's own mistakes, and persists it so the
+    next generator run labels matches (draws included) at realistic rates.
+    """
+    from predict.calibrator import learn_draw_bonus, store_draw_bonus
+
+    log.info("=" * 60)
+    log.info("STEP 6: Calibrating outcome decision from track record")
+    log.info("=" * 60)
+
+    bonus = learn_draw_bonus()
+    store_draw_bonus(bonus)
+    return {"draw_bonus": bonus}
 
 
 # ===================================================================
@@ -338,7 +386,24 @@ def run_pipeline(
     else:
         summary["steps"]["live_ingestion"] = {"status": "skipped"}
 
-    # Step 3: Build features
+    # Step 3: Promote finished live matches into training history
+    # (the self-learning loop — model learns from the current season).
+    try:
+        promoted = step_promote_finished()
+        summary["steps"]["promote_finished"] = {"promoted": promoted}
+    except Exception as exc:
+        log.error("Finished-match promotion failed: %s", exc)
+        summary["steps"]["promote_finished"] = {"status": "error", "error": str(exc)}
+
+    # Step 3b: Learn probability calibration (temperature) on recent history.
+    try:
+        t = step_calibrate_temperature()
+        summary["steps"]["temperature"] = t
+    except Exception as exc:
+        log.error("Temperature calibration failed: %s", exc)
+        summary["steps"]["temperature"] = {"status": "error", "error": str(exc)}
+
+    # Step 4: Build features
     try:
         fixtures_with_features = step_build_features()
         summary["steps"]["features"] = {"count": len(fixtures_with_features)}
@@ -347,7 +412,7 @@ def run_pipeline(
         fixtures_with_features = []
         summary["steps"]["features"] = {"status": "error", "error": str(exc)}
 
-    # Step 4: Predict + write
+    # Step 5: Predict + write
     try:
         pred_count = step_predict_and_write(fixtures_with_features)
         summary["steps"]["predictions"] = {"written": pred_count}
@@ -355,13 +420,29 @@ def run_pipeline(
         log.error("Prediction writing failed: %s", exc)
         summary["steps"]["predictions"] = {"status": "error", "error": str(exc)}
 
-    # Step 5: Sync track record
+    # Step 6: Sync track record
     try:
         track_count = step_sync_track_record()
         summary["steps"]["track_record"] = {"synced": track_count}
     except Exception as exc:
         log.error("Track record sync failed: %s", exc)
         summary["steps"]["track_record"] = {"status": "error", "error": str(exc)}
+
+    # Step 6b: Reconcile external team/player IDs (id_mapping)
+    try:
+        id_map = step_map_ids()
+        summary["steps"]["id_mapping"] = id_map
+    except Exception as exc:
+        log.error("ID mapping step failed: %s", exc)
+        summary["steps"]["id_mapping"] = {"status": "error", "error": str(exc)}
+
+    # Step 7: Learn from results to calibrate the decision rule.
+    try:
+        cal = step_calibrate()
+        summary["steps"]["calibration"] = cal
+    except Exception as exc:
+        log.error("Calibration step failed: %s", exc)
+        summary["steps"]["calibration"] = {"status": "error", "error": str(exc)}
 
     elapsed = time.time() - start
     summary["elapsed_seconds"] = round(elapsed, 1)
