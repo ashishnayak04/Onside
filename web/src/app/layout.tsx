@@ -1,35 +1,39 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Oswald } from "next/font/google";
+import { Bebas_Neue, Manrope, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const bebasNeue = Bebas_Neue({
+  variable: "--font-headline",
   subsets: ["latin"],
+  weight: "400",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const manrope = Manrope({
+  variable: "--font-body",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
-const display = Oswald({
-  variable: "--font-display",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-label",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Onside - Football Predictions",
-  description: "Data-driven football match predictions for La Liga and UEFA Champions League",
+  title: "Onside — Football Prediction Platform | La Liga & UCL",
+  description:
+    "Dixon-Coles + SOT model backtested on 1,527 matches. Real form, expected goals, injuries and H2H — every number shows its reasoning.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
+      className={`${bebasNeue.variable} ${manrope.variable} ${spaceGrotesk.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col bg-[#F5F5F0] text-[#1B4332]">{children}</body>
     </html>
   );
 }
+

@@ -1,15 +1,14 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import Sidebar from "@/components/Sidebar";
+import DashboardShell from "@/components/DashboardShell";
 
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar role={user.role} userName={user.name} />
-      <main className="flex-1 p-8 overflow-auto">{children}</main>
-    </div>
+    <DashboardShell role={user.role} userName={user.name}>
+      {children}
+    </DashboardShell>
   );
 }

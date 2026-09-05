@@ -1,6 +1,18 @@
 import { query } from "@/lib/db";
 import Link from "next/link";
 
+function CompBadge({ competition }: { competition: string }) {
+  const lower = competition?.toLowerCase() ?? "";
+  const isLaLiga = lower.includes("la liga") || lower.includes("laliga");
+  const isUCL = lower.includes("ucl") || lower.includes("champions");
+  const cls = isLaLiga
+    ? "comp-badge comp-badge-laliga"
+    : isUCL
+    ? "comp-badge comp-badge-ucl"
+    : "comp-badge comp-badge-default";
+  return <span className={cls}>{competition || "—"}</span>;
+}
+
 export default async function DashboardHome() {
   let matches: Record<string, unknown>[] = [];
   let stats = { total: 0, correct: 0, accuracy: 0 };
@@ -33,59 +45,120 @@ export default async function DashboardHome() {
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+    <div className="max-w-5xl mx-auto">
+      {/* Page header */}
+      <div className="mb-8">
+        <h1 className="page-header mb-1">Dashboard</h1>
+        <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.7 }}>
+          Your predictions overview at a glance
+        </p>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <p className="text-sm text-[#71717a]">Upcoming Fixtures</p>
-          <p className="text-3xl font-bold text-[#22c55e] mt-2">{matches.length}</p>
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="dash-card stat-accent-green p-6">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+            Upcoming Fixtures
+          </p>
+          <p className="text-4xl font-black" style={{ color: "var(--forest)", fontFamily: "var(--font-headline)" }}>
+            {matches.length}
+          </p>
+          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>scheduled matches</p>
         </div>
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <p className="text-sm text-[#71717a]">Total Predictions</p>
-          <p className="text-3xl font-bold text-[#3b82f6] mt-2">{stats.total}</p>
+        <div className="dash-card stat-accent-blue p-6">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+            Total Predictions
+          </p>
+          <p className="text-4xl font-black" style={{ color: "#2563eb", fontFamily: "var(--font-headline)" }}>
+            {stats.total}
+          </p>
+          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>predictions made</p>
         </div>
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <p className="text-sm text-[#71717a]">Accuracy</p>
-          <p className="text-3xl font-bold text-[#f59e0b] mt-2">
-            {stats.total > 0 ? `${stats.accuracy}%` : "N/A"}
+        <div className="dash-card stat-accent-amber p-6">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+            Accuracy
+          </p>
+          <p className="text-4xl font-black" style={{ color: "#d97706", fontFamily: "var(--font-headline)" }}>
+            {stats.total > 0 ? `${stats.accuracy}%` : "—"}
+          </p>
+          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>
+            {stats.correct} correct of {stats.total}
           </p>
         </div>
       </div>
 
-      <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#27272a] flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Upcoming Fixtures</h2>
-          <Link href="/dashboard/fixtures" className="text-sm text-[#22c55e] hover:underline">
-            View all
+      {/* Upcoming fixtures */}
+      <div className="dash-card overflow-hidden">
+        <div
+          className="px-6 py-4 flex items-center justify-between"
+          style={{ borderBottom: "1.5px solid var(--border)" }}
+        >
+          <div>
+            <h2 className="text-lg font-bold" style={{ color: "var(--forest)" }}>Upcoming Fixtures</h2>
+            <p className="text-xs mt-0.5" style={{ color: "var(--forest-mid)", opacity: 0.6 }}>Next scheduled matches</p>
+          </div>
+          <Link
+            href="/dashboard/fixtures"
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            style={{
+              background: "rgba(13,51,32,0.07)",
+              color: "var(--forest-mid)",
+              fontFamily: "var(--font-label)",
+            }}
+          >
+            View all →
           </Link>
         </div>
+
         {matches.length === 0 ? (
-          <div className="p-8 text-center text-[#71717a]">
-            No upcoming fixtures. Add matches to the database to see predictions.
+          <div className="p-12 text-center">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: "rgba(13,51,32,0.06)" }}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--forest-mid)", opacity: 0.4 }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>No upcoming fixtures. Add matches to see predictions.</p>
           </div>
         ) : (
-          <div className="divide-y divide-[#27272a]">
-            {matches.map((match) => (
+          <div>
+            {matches.map((match, i) => (
               <Link
                 key={match.id as string}
                 href={`/dashboard/matches/${match.id as string}`}
-                className="flex items-center justify-between px-6 py-4 hover:bg-[#27272a]/50 transition-colors"
+                className="flex items-center gap-4 px-6 py-4 transition-all duration-150 group"
+                style={{
+                  borderBottom: i < matches.length - 1 ? "1px solid var(--border)" : "none",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(13,51,32,0.03)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="text-right flex-1">
-                    <p className="font-medium">{(match.home_team_name as string) || "TBD"}</p>
+                {/* Teams */}
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="text-right flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                      {(match.home_team_name as string) || "TBD"}
+                    </p>
                   </div>
-                  <div className="bg-[#27272a] px-3 py-1 rounded text-sm font-mono text-[#71717a]">
-                    vs
+                  <div
+                    className="px-3 py-1 rounded-lg text-xs font-mono shrink-0"
+                    style={{ background: "var(--mist)", color: "var(--forest-mid)" }}
+                  >
+                    VS
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium">{(match.away_team_name as string) || "TBD"}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                      {(match.away_team_name as string) || "TBD"}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right ml-4">
-                  <p className="text-sm text-[#71717a]">{match.competition as string}</p>
-                  <p className="text-xs text-[#a1a1aa]">
+
+                {/* Meta */}
+                <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                  <CompBadge competition={match.competition as string} />
+                  <p className="text-xs" style={{ color: "var(--forest-mid)", opacity: 0.55 }}>
                     {new Date(match.match_date as string).toLocaleDateString("en-GB", {
                       weekday: "short",
                       day: "numeric",
@@ -93,6 +166,10 @@ export default async function DashboardHome() {
                     })}
                   </p>
                 </div>
+
+                <svg className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-40 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--forest)" }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </Link>
             ))}
           </div>

@@ -1,574 +1,823 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import {
+  motion,
+  useInView,
+  useMotionValue,
+  useSpring,
+  useScroll,
+  useTransform,
+  AnimatePresence,
+} from "framer-motion";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-/* ================================================================== */
-/*  DATA — mirrors Onside's real output format                         */
-/* ================================================================== */
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
-type Match = {
-  comp: string;
-  tag: string;
-  season: string;
-  home: string;
-  homeCode: string;
-  away: string;
-  awayCode: string;
-  date: string;
-  homeWin: number;
-  draw: number;
-  awayWin: number;
-  hs: number;
-  as: number;
-  conf: "HIGH" | "MEDIUM" | "LOW";
-  why: string[];
-};
-
-const MATCHES: Match[] = [
+/* ──────────────────────────────────────────────────────── */
+/*  DATA                                                    */
+/* ──────────────────────────────────────────────────────── */
+const MATCHES = [
   {
-    comp: "La Liga",
-    tag: "Matchday 10 · El Sadar",
-    season: "2026/27",
-    home: "Osasuna",
-    homeCode: "OSA",
-    away: "Valencia",
-    awayCode: "VAL",
-    date: "Sun 30 May · 21:00 CET",
-    homeWin: 45.0,
-    draw: 26.3,
-    awayWin: 28.6,
-    hs: 1.44,
-    as: 1.09,
-    conf: "MEDIUM",
+    comp: "La Liga", tag: "MD 10 · El Sadar", season: "2026/27",
+    home: "Osasuna", homeCode: "OSA",
+    away: "Valencia", awayCode: "VAL",
+    date: "Sun 30 Nov · 21:00 CET",
+    homeWin: 45, draw: 27, awayWin: 28,
+    hs: 1.44, as: 1.09,
+    conf: "MEDIUM" as const,
     why: [
-      "Osasuna have won 5 of their last 7 at El Sadar, home xG running +0.35 above league baseline.",
-      "Valencia's away xG-against has drifted with two starters out — our model reads them under-strength on the road.",
-      "Last 4 meetings finished within one goal; that narrow band is what props up the 26% draw.",
+      "OSA won 5 of last 7 at El Sadar. Home xG +0.35 above baseline.",
+      "VAL travel under-strength — two starters missing, xG-against drifting.",
+      "Last 4 H2Hs within one goal. Tight band = 27% draw.",
     ],
   },
   {
-    comp: "La Liga",
-    tag: "Matchday 12 · Spotify Camp Nou",
-    season: "2026/27",
-    home: "FC Barcelona",
-    homeCode: "BAR",
-    away: "Athletic Club",
-    awayCode: "ATH",
-    date: "Sat 12 Sep · 21:00 CET",
-    homeWin: 68.0,
-    draw: 18.0,
-    awayWin: 14.0,
-    hs: 1.92,
-    as: 0.71,
-    conf: "HIGH",
+    comp: "La Liga", tag: "MD 12 · Camp Nou", season: "2026/27",
+    home: "FC Barcelona", homeCode: "BAR",
+    away: "Athletic Club", awayCode: "ATH",
+    date: "Sat 12 Oct · 21:00 CET",
+    homeWin: 68, draw: 18, awayWin: 14,
+    hs: 1.92, as: 0.71,
+    conf: "HIGH" as const,
     why: [
-      "Barca create 2.3xG per home match — the single strongest attacking profile in our La Liga fit.",
-      "Athletic travel with their best defender suspended and a poor away xG-differential.",
-      "High-mu home side; model allocates slim 18% to the draw, 14% to the away upset.",
+      "Barça 2.3 xG/home — strongest attacking profile in our La Liga fit.",
+      "ATH best CB suspended. Poor away xG-differential this season.",
+      "High-mu home side. 14% upset probability — model is unambiguous.",
     ],
   },
   {
-    comp: "UEFA Champions League",
-    tag: "League Phase R2 · Bernabéu",
-    season: "2025/26",
-    home: "Real Madrid",
-    homeCode: "RMA",
-    away: "Manchester City",
-    awayCode: "MCI",
+    comp: "UCL", tag: "LP R2 · Bernabéu", season: "2025/26",
+    home: "Real Madrid", homeCode: "RMA",
+    away: "Man City", awayCode: "MCI",
     date: "Wed 30 Sep · 21:00 CET",
-    homeWin: 41.0,
-    draw: 27.0,
-    awayWin: 32.0,
-    hs: 1.31,
-    as: 0.98,
-    conf: "LOW",
+    homeWin: 41, draw: 27, awayWin: 32,
+    hs: 1.31, as: 0.98,
+    conf: "LOW" as const,
     why: [
-      "Two elite xG sides nearly cancel out — our SOT layer reads this as the tightest of the three.",
-      "Madrid's knockout-stage home record is excellent, but City's away xG is top-3 in the sample.",
-      "Close mu values push draw probability up to 27%; genuine coin-flip territory, hence LOW confidence.",
+      "Two elite xG sides nearly cancel. Tightest fixture in the sample.",
+      "Madrid KO home record is elite. City away xG is top-3 in dataset.",
+      "27% draw reflects genuinely close mu values. Coin-flip territory.",
     ],
   },
-];
-
-const METHOD = [
-  { tag: "FORM", label: "Current form", value: "Last 6 · xWpts weighted", note: "recency ξ = 0.004" },
-  { tag: "xG", label: "Expected goals", value: "xG for / against, split home & away", note: "mu · λ" },
-  { tag: "OUT", label: "Availability", value: "Injuries & suspensions", note: "squad delta" },
-  { tag: "H2H", label: "Head-to-head", value: "Historical matchup band", note: "tight-score lean" },
 ];
 
 const TICKER = [
-  "MCI 2 - 1 ARS",
-  "REAL 3 - 1 SEV",
-  "BAR 2 - 0 VLL",
-  "ATM 1 - 1 SOC",
-  "OSA 2 - 1 VIL",
+  "BAR 5–1 VLL ◆", "MCI 2–1 ARS ◆", "REAL 3–1 SEV ◆",
+  "ATM 1–1 SOC ◆", "OSA 2–1 VIL ◆", "ATH 0–2 GIR ◆",
+  "CEL 1–1 ESP ◆", "MAL 0–3 MAD ◆", "GET 1–0 RAY ◆",
 ];
 
-/* ================================================================== */
-/*  SMALL HELPERS                                                      */
-/* ================================================================== */
+const CONF_STYLES = {
+  HIGH:   { chip: "bg-[#dcfce7] text-[#14532d] border-[#86efac]", dot: "#22c55e" },
+  MEDIUM: { chip: "bg-[#fef9c3] text-[#713f12] border-[#fde047]", dot: "#eab308" },
+  LOW:    { chip: "bg-[#dbeafe] text-[#1e3a8a] border-[#93c5fd]", dot: "#3b82f6" },
+};
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+/* ──────────────────────────────────────────────────────── */
+/*  SPRING COUNT-UP                                         */
+/* ──────────────────────────────────────────────────────── */
+function CountUp({ value, suffix = "", color = "inherit" }: { value: string; suffix?: string; color?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-60px" });
+  const num = parseFloat(value);
+  const mv = useMotionValue(0);
+  const spring = useSpring(mv, { stiffness: 50, damping: 14, mass: 0.8 });
+  const dec = value.includes(".") ? value.split(".")[1].length : 0;
 
-function useReveal({ delay = 0 }: { delay?: number } = {}) {
-  const reduce = useReducedMotion();
-  return {
-    initial: reduce ? false : { opacity: 0, y: 28 },
-    whileInView: { opacity: 1, y: 0 },
-    viewport: { once: true, margin: "-70px" },
-    transition: { duration: 0.7, delay, ease: EASE },
-  } as const;
+  useEffect(() => { if (inView) mv.set(num); }, [inView, mv, num]);
+  useEffect(() =>
+    spring.on("change", (v) => {
+      if (ref.current) ref.current.textContent = v.toFixed(dec) + suffix;
+    }),
+    [spring, dec, suffix]
+  );
+
+  return <span ref={ref} style={{ color }}>{"0" + suffix}</span>;
 }
 
-function SectionTag({ children }: { children: React.ReactNode }) {
+/* ──────────────────────────────────────────────────────── */
+/*  PROBABILITY BAR                                         */
+/* ──────────────────────────────────────────────────────── */
+function ProbBar({ home, draw, away }: { home: number; draw: number; away: number }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-40px" });
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-[#22c55e]/30 bg-[#22c55e]/10 px-3 py-1 font-display text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a3e635]">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#a3e635]" />
-      {children}
+    <div ref={ref} className="space-y-2">
+      <div className="flex h-4 w-full overflow-hidden rounded-full bg-[#0D3320]/10 gap-px">
+        {[
+          { w: home, cls: "rounded-l-full bg-[#1B5E37]" },
+          { w: draw, cls: "bg-[#94a3b8]" },
+          { w: away, cls: "rounded-r-full bg-[#FF4D00]" },
+        ].map((s, i) => (
+          <motion.div key={i} className={`h-full ${s.cls}`}
+            initial={{ width: 0 }}
+            animate={inView ? { width: `${s.w}%` } : { width: 0 }}
+            transition={{ duration: 1.1, delay: 0.1 + i * 0.1, ease: [0.34, 1.2, 0.64, 1] }}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between font-label text-[11px] font-semibold uppercase tracking-widest">
+        <span style={{ color: "#1B5E37" }}>{home}% H</span>
+        <span style={{ color: "#94a3b8" }}>{draw}% D</span>
+        <span style={{ color: "#FF4D00" }}>{away}% A</span>
+      </div>
     </div>
   );
 }
 
-/* ================================================================== */
-/*  PITCH — background field with mowing stripes + markings            */
-/* ================================================================== */
-
-function Pitch() {
+/* ──────────────────────────────────────────────────────── */
+/*  FOOTBALL PITCH SVG (decorative)                        */
+/* ──────────────────────────────────────────────────────── */
+function PitchSVG({ className = "", opacity = 0.07 }: { className?: string; opacity?: number }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* base + mowing stripes */}
-      <div className="absolute inset-0" style={{
-        background:
-          "linear-gradient(180deg, #08120c 0%, #0c1f13 30%, #0f2a19 55%, #0c1f13 80%, #08120c 100%)",
-      }} />
-      <div
-        className="absolute inset-0 opacity-60"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(90deg, rgba(255,255,255,0.022) 0 180px, rgba(0,0,0,0.05) 180px 360px)",
-        }}
-      />
-      {/* floodlight glow */}
-      <div className="absolute -top-40 left-1/2 h-[520px] w-[1100px] -translate-x-1/2 rounded-full"
-        style={{ background: "radial-gradient(closest-side, rgba(163,230,53,0.16), transparent 70%)" }} />
-      {/* center circle + halfway line */}
-      <div className="absolute left-1/2 top-1/2 h-[520px] w-[90px] -translate-x-1/2 -translate-y-1/2 border-y border-white/10" />
-      <div className="absolute left-1/2 top-1/2 aspect-square h-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
-      <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20" />
-      {/* penalty boxes (hint, RHS) */}
-      <div className="absolute right-0 top-1/2 h-[280px] w-[120px] -translate-y-1/2 border-y border-l border-white/10" />
-      <div className="absolute right-0 top-[calc(50%+0px)] h-24 w-9 -translate-y-1/2 border-y border-l border-white/10" />
-      {/* vignette */}
-      <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 50% 20%, transparent 40%, rgba(4,9,6,0.6) 100%)" }} />
-    </div>
+    <svg className={className} viewBox="0 0 800 500" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style={{ opacity }}>
+      {/* Outer boundary */}
+      <rect x="20" y="20" width="760" height="460" stroke="currentColor" strokeWidth="2" />
+      {/* Halfway line */}
+      <line x1="400" y1="20" x2="400" y2="480" stroke="currentColor" strokeWidth="2" />
+      {/* Centre circle */}
+      <circle cx="400" cy="250" r="80" stroke="currentColor" strokeWidth="2" />
+      <circle cx="400" cy="250" r="4" fill="currentColor" />
+      {/* Left penalty box */}
+      <rect x="20" y="155" width="110" height="190" stroke="currentColor" strokeWidth="2" />
+      <rect x="20" y="205" width="50" height="90" stroke="currentColor" strokeWidth="2" />
+      <circle cx="130" cy="250" r="35" stroke="currentColor" strokeWidth="2" strokeDasharray="8 4" />
+      {/* Right penalty box */}
+      <rect x="670" y="155" width="110" height="190" stroke="currentColor" strokeWidth="2" />
+      <rect x="730" y="205" width="50" height="90" stroke="currentColor" strokeWidth="2" />
+      <circle cx="670" cy="250" r="35" stroke="currentColor" strokeWidth="2" strokeDasharray="8 4" />
+      {/* Corner arcs */}
+      <path d="M20,20 Q30,20 30,30" stroke="currentColor" strokeWidth="2" />
+      <path d="M780,20 Q770,20 770,30" stroke="currentColor" strokeWidth="2" />
+      <path d="M20,480 Q30,480 30,470" stroke="currentColor" strokeWidth="2" />
+      <path d="M780,480 Q770,480 770,470" stroke="currentColor" strokeWidth="2" />
+    </svg>
   );
 }
 
-/* ================================================================== */
-/*  SIGNATURE — Live Broadcast Match Centre                            */
-/* ================================================================== */
-
-function Countdown({ dateLabel }: { dateLabel: string }) {
-  const reduce = useReducedMotion();
-  // simplified: show a ticking "kickoff in" using a static fixture feel (dates are far ahead)
+/* ──────────────────────────────────────────────────────── */
+/*  MATCH CARD                                             */
+/* ──────────────────────────────────────────────────────── */
+function MatchCard({ m, active }: { m: typeof MATCHES[0]; active: boolean }) {
+  const cs = CONF_STYLES[m.conf];
   return (
-    <span className="flex items-center gap-1.5 font-display text-[13px] font-semibold uppercase tracking-wider text-[#a3e635]">
-      <motion.span
-        animate={reduce ? undefined : { opacity: [1, 0.3, 1] }}
-        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-        className="h-1.5 w-1.5 rounded-full bg-[#a3e635]"
-      />
-      {dateLabel}
-    </span>
-  );
-}
-
-function WinDrawLoss({ home, draw, away }: { home: number; draw: number; away: number }) {
-  const reduce = useReducedMotion();
-  return (
-    <div className="flex h-9 overflow-hidden rounded-lg border border-white/10">
-      {[
-        { v: home, c: "bg-[#22c55e]" },
-        { v: draw, c: "bg-[#64748b]" },
-        { v: away, c: "bg-[#f59e0b]" },
-      ].map((s, i) => (
+    <AnimatePresence mode="wait">
+      {active && (
         <motion.div
-          key={i}
-          initial={reduce ? false : { width: 0 }}
-          animate={{ width: `${s.v}%` }}
-          transition={{ duration: 0.9, delay: 0.5 + i * 0.12, ease: EASE }}
-          className={`${s.c} relative`}
+          key={m.homeCode}
+          initial={{ opacity: 0, y: 20, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -16, scale: 0.97 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="absolute inset-0"
         >
-          <motion.span
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.9 + i * 0.12 }}
-            className="absolute inset-0 flex items-center justify-center font-display text-[11px] font-bold text-black/80"
-          >
-            {i === 0 ? "H" : i === 1 ? "D" : "A"}
-          </motion.span>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
+          <div className="h-full bg-white rounded-2xl border border-[#0D3320]/08 shadow-[0_32px_72px_-16px_rgba(13,51,32,0.14)] overflow-hidden flex flex-col">
+            {/* Top bar */}
+            <div className="flex items-center justify-between px-5 py-3.5 bg-[#0D3320]">
+              <div className="flex items-center gap-2">
+                <span className="relative h-2.5 w-2.5 flex-shrink-0">
+                  <span className="live-ping absolute inset-0 rounded-full bg-red-400/60" />
+                  <span className="relative block h-2.5 w-2.5 rounded-full bg-red-400" />
+                </span>
+                <span className="font-label text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">Live Read</span>
+              </div>
+              <span className="font-label text-[10px] text-white/50 uppercase tracking-widest">{m.comp} · {m.tag}</span>
+              <span className="font-label text-[10px] text-white/30">{m.season}</span>
+            </div>
 
-function TeamScore({ code, score, home, accent }: { code: string; score: string; home?: boolean; accent: boolean }) {
-  return (
-    <div className={`flex flex-1 flex-col ${home ? "items-start" : "items-end"}`}>
-      <span className="font-display text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">{code}</span>
-      <motion.span
-        initial={false}
-        animate={{ scale: [1, 1.35, 1] }}
-        transition={{ duration: 0.45, delay: 1.15 }}
-        className={`font-display text-5xl font-bold leading-none sm:text-6xl ${accent ? "text-[#a3e635]" : "text-white/85"}`}
-      >
-        {score}
-      </motion.span>
-    </div>
+            <div className="flex-1 p-5 flex flex-col gap-4 overflow-hidden">
+              {/* xG Board */}
+              <div className="flex items-center">
+                <div className="flex-1 text-center">
+                  <div className="w-14 h-14 rounded-xl bg-[#F0F2EE] border border-[#0D3320]/10 flex items-center justify-center mx-auto mb-2">
+                    <span className="font-headline text-xl text-[#0D3320]">{m.homeCode}</span>
+                  </div>
+                  <div className="font-label text-4xl font-bold text-[#0D3320] tabular-nums leading-none">{m.hs.toFixed(2)}</div>
+                  <div className="font-label text-[9px] uppercase tracking-widest text-[#0D3320]/35 mt-1">xG Projected</div>
+                </div>
+
+                <div className="flex flex-col items-center gap-0.5 px-2">
+                  <div className="font-headline text-4xl text-[#0D3320]/15 leading-none">VS</div>
+                </div>
+
+                <div className="flex-1 text-center">
+                  <div className="w-14 h-14 rounded-xl bg-[#F0F2EE] border border-[#0D3320]/10 flex items-center justify-center mx-auto mb-2">
+                    <span className="font-headline text-xl text-[#0D3320]">{m.awayCode}</span>
+                  </div>
+                  <div className="font-label text-4xl font-bold text-[#0D3320] tabular-nums leading-none">{m.as.toFixed(2)}</div>
+                  <div className="font-label text-[9px] uppercase tracking-widest text-[#0D3320]/35 mt-1">xG Projected</div>
+                </div>
+              </div>
+
+              {/* Full names */}
+              <div className="flex justify-between text-[13px] font-semibold text-[#0D3320]/55 border-t border-[#0D3320]/05 pt-3">
+                <span>{m.home}</span>
+                <span className="text-[#0D3320]/20 font-normal">vs</span>
+                <span>{m.away}</span>
+              </div>
+
+              {/* Prob bar */}
+              <ProbBar home={m.homeWin} draw={m.draw} away={m.awayWin} />
+
+              {/* Confidence */}
+              <div className="flex items-center justify-between">
+                <span className="font-label text-[10px] uppercase tracking-widest text-[#0D3320]/35">Confidence</span>
+                <span className={`rounded-md border px-2.5 py-1 font-label text-[11px] font-bold uppercase tracking-wider ${cs.chip}`}>
+                  {m.conf}
+                </span>
+              </div>
+
+              {/* Why */}
+              <div className="rounded-xl bg-[#F0F2EE] p-3.5 space-y-2 flex-1">
+                <p className="font-label text-[9px] font-bold uppercase tracking-[0.25em] text-[#0D3320]/40">The Read</p>
+                {m.why.map((line, i) => (
+                  <div key={i} className="flex gap-2 text-[11.5px] leading-snug text-[#0D3320]/65">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#FF4D00]/70" />
+                    {line}
+                  </div>
+                ))}
+              </div>
+
+              {/* Date */}
+              <div className="font-label text-[10px] text-[#0D3320]/30 uppercase tracking-widest text-center">{m.date}</div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
 function MatchCentre() {
   const [idx, setIdx] = useState(0);
-  const reduce = useReducedMotion();
-  const m = MATCHES[idx];
-
   useEffect(() => {
-    const t = setInterval(() => setIdx((i) => (i + 1) % MATCHES.length), 7000);
+    const t = setInterval(() => setIdx(i => (i + 1) % MATCHES.length), 7500);
     return () => clearInterval(t);
   }, []);
 
-  const confChip =
-    m.conf === "HIGH"
-      ? "border-[#22c55e]/40 bg-[#22c55e]/15 text-[#a3e635]"
-      : m.conf === "MEDIUM"
-      ? "border-[#f59e0b]/40 bg-[#f59e0b]/15 text-[#fbbf24]"
-      : "border-[#38bdf8]/40 bg-[#38bdf8]/15 text-[#7dd3fc]";
-
   return (
-    <div className="relative w-full max-w-md">
-      {/* amber glow behind */}
-      <div aria-hidden className="absolute -inset-6 rounded-[2.2rem]"
-        style={{ background: "radial-gradient(closest-side, rgba(163,230,53,0.22), transparent 75%)", filter: "blur(24px)" }} />
-
-      <motion.div
-        initial={reduce ? false : { opacity: 0, y: 40, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.9, delay: 0.15, ease: EASE }}
-        className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0b1a10]/95 to-[#08120c]/95 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.9)] backdrop-blur"
-      >
-        {/* top ticker strip */}
-        <div className="flex items-center justify-between border-b border-white/10 bg-black/30 px-4 py-2">
-          <span className="flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.2em] text-[#ff4d4d]">
-            <motion.span animate={reduce ? undefined : { opacity: [1, 0.2, 1] }} transition={{ duration: 1.2, repeat: Infinity }} className="h-1.5 w-1.5 rounded-full bg-[#ff4d4d]" />
-            LIVE
-          </span>
-          <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
-            {m.comp} · {m.tag}
-          </span>
-          <Countdown dateLabel={m.season} />
-        </div>
-
-        <div className="p-6">
-          {/* scoreboard */}
-          <div className="flex items-center justify-between gap-2">
-            <TeamScore code={m.homeCode} score={m.hs.toFixed(2)} home accent={m.homeWin > m.awayWin} />
-            <div className="flex flex-col items-center px-2">
-              <span className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">predicted</span>
-              <span className="font-display text-xl font-bold text-white/25">:</span>
-              <span className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">score</span>
-            </div>
-            <TeamScore code={m.awayCode} score={m.as.toFixed(2)} accent={m.awayWin > m.homeWin} />
-          </div>
-
-          {/* full names */}
-          <div className="mt-2 flex items-center justify-between text-sm font-medium text-white/70">
-            <span>{m.home}</span>
-            <span className="text-white/35">vs</span>
-            <span>{m.away}</span>
-          </div>
-
-          {/* W/D/L bar */}
-          <div className="mt-6">
-            <WinDrawLoss home={m.homeWin} draw={m.draw} away={m.awayWin} />
-            <div className="mt-1.5 flex justify-between px-1 font-display text-[10px] font-semibold uppercase tracking-wider text-white/50">
-              <span className="text-[#22c55e]">{m.homeWin.toFixed(0)}% home</span>
-              <span className="text-[#a1a1aa]">{m.draw.toFixed(0)}% draw</span>
-              <span className="text-[#f59e0b]">{m.awayWin.toFixed(0)}% away</span>
-            </div>
-          </div>
-
-          {/* confidence */}
-          <div className="mt-4 flex items-center justify-between">
-            <span className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Confidence</span>
-            <span className={`rounded-md border px-2.5 py-1 font-display text-[11px] font-bold uppercase tracking-wider ${confChip}`}>
-              {m.conf}
-            </span>
-          </div>
-
-          {/* why */}
-          <motion.div key={idx} className="mt-5 space-y-2.5 rounded-xl border border-white/10 bg-black/20 p-4"
-            initial={reduce ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: EASE }}>
-            <p className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-[#a3e635]">
-              Why we think so
-            </p>
-            {m.why.map((line, i) => (
-              <div key={i} className="flex gap-2 text-[12.5px] leading-snug text-white/75">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#a3e635]/70" />
-                {line}
-              </div>
-            ))}
-          </motion.div>
-
-          {/* nav dots */}
-          <div className="mt-5 flex items-center justify-center gap-1.5">
-            {MATCHES.map((_, i) => (
-              <button key={i} onClick={() => setIdx(i)} aria-label={`Show match ${i + 1}`}
-                className={`h-1.5 rounded-full transition-all ${i === idx ? "w-5 bg-[#a3e635]" : "w-1.5 bg-white/20 hover:bg-white/40"}`} />
-            ))}
-          </div>
-        </div>
-      </motion.div>
+    <div className="relative w-full max-w-[360px] mx-auto">
+      <div className="relative h-[560px]">
+        {MATCHES.map((m, i) => <MatchCard key={m.homeCode} m={m} active={i === idx} />)}
+      </div>
+      <div className="mt-4 flex justify-center gap-2">
+        {MATCHES.map((_, i) => (
+          <button key={i} onClick={() => setIdx(i)} aria-label={`Match ${i + 1}`}
+            className={`rounded-full transition-all duration-300 ${i === idx ? "w-8 h-2.5 bg-[#FF4D00]" : "w-2.5 h-2.5 bg-[#0D3320]/20 hover:bg-[#0D3320]/40"}`}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ================================================================== */
-/*  NAV / FOOTER                                                       */
-/* ================================================================== */
-
+/* ──────────────────────────────────────────────────────── */
+/*  NAV                                                    */
+/* ──────────────────────────────────────────────────────── */
 function Nav() {
+  const { scrollY } = useScroll();
+  const bg = useTransform(scrollY, [0, 80], ["rgba(240,242,238,0)", "rgba(240,242,238,0.97)"]);
+  const shadow = useTransform(scrollY, [0, 80], ["none", "0 2px 32px -4px rgba(13,51,32,0.12)"]);
+
   return (
-    <header className="relative z-20 flex items-center justify-between px-6 py-5">
-      <Link href="/" className="flex items-center gap-2">
-        <span className="relative flex h-4 w-4">
-          <span className="absolute inset-0 rotate-45 rounded-[3px] bg-[#a3e635]" />
-          <span className="absolute inset-[5px] rounded-full bg-[#08120c]" />
-        </span>
-        <span className="font-display text-xl font-bold tracking-tight text-white">ONSIDE</span>
-      </Link>
-      <nav className="hidden items-center gap-7 font-display text-[13px] font-semibold uppercase tracking-[0.14em] text-white/60 md:flex">
-        <a href="#how" className="transition hover:text-[#a3e635]">The method</a>
-        <a href="#track" className="transition hover:text-[#a3e635]">Track record</a>
-        <a href="#comps" className="transition hover:text-[#a3e635]">Competitions</a>
-      </nav>
-      <Link href="/login" className="rounded-lg border border-[#a3e635]/40 bg-[#a3e635]/10 px-4 py-2 font-display text-[13px] font-bold uppercase tracking-wider text-[#a3e635] transition hover:bg-[#a3e635] hover:text-[#08120c]">
-        Sign in
-      </Link>
-    </header>
+    <motion.header style={{ backgroundColor: bg, boxShadow: shadow }}
+      className="fixed top-0 inset-x-0 z-50 backdrop-blur-md">
+      <div className="mx-auto max-w-7xl flex items-center justify-between px-6 py-4">
+        <Link href="/" className="flex items-center gap-3 group">
+          {/* Diamond icon */}
+          <div className="relative h-8 w-8 flex-shrink-0">
+            <div className="absolute inset-0 bg-[#0D3320] group-hover:scale-110 transition-transform duration-300"
+              style={{ clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }} />
+            <div className="absolute inset-[35%] bg-[#FF4D00] rounded-full" />
+          </div>
+          <span className="font-headline text-[28px] text-[#0D3320] tracking-wider leading-none">ONSIDE</span>
+        </Link>
+
+        <nav className="hidden md:flex items-center gap-8">
+          {[["#method", "The Method"], ["#track", "Track Record"], ["#comps", "Competitions"]].map(([href, label]) => (
+            <a key={href} href={href}
+              className="font-label text-[12px] font-semibold uppercase tracking-[0.2em] text-[#0D3320]/50 hover:text-[#0D3320] transition-colors duration-200">
+              {label}
+            </a>
+          ))}
+        </nav>
+
+        <Link href="/login"
+          className="font-label text-[12px] font-bold uppercase tracking-widest bg-[#0D3320] text-white px-6 py-2.5 rounded-full hover:bg-[#FF4D00] transition-all duration-300">
+          Sign In
+        </Link>
+      </div>
+    </motion.header>
   );
 }
 
+/* ──────────────────────────────────────────────────────── */
+/*  HERO                                                   */
+/* ──────────────────────────────────────────────────────── */
+function Hero() {
+  const containerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({ delay: 0.1 });
+      tl.from(".hl-1", { yPercent: 110, duration: 0.9, ease: "power4.out" })
+        .from(".hl-2", { yPercent: 110, duration: 0.9, ease: "power4.out" }, "-=0.7")
+        .from(".hl-3", { yPercent: 110, duration: 0.9, ease: "power4.out" }, "-=0.7")
+        .from(".hero-sub",  { y: 24, opacity: 0, duration: 0.7, ease: "power3.out" }, "-=0.4")
+        .from(".hero-ctas", { y: 20, opacity: 0, duration: 0.6, ease: "power3.out" }, "-=0.4")
+        .from(".hero-strip", { y: 12, opacity: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
+        .from(".hero-card",  { x: 64, opacity: 0, duration: 1.0, ease: "power4.out" }, "<-0.5");
+
+      // Parallax on scroll
+      gsap.to(".hero-bg-pitch", {
+        yPercent: 20,
+        ease: "none",
+        scrollTrigger: { trigger: containerRef.current, start: "top top", end: "bottom top", scrub: true },
+      });
+    }, containerRef);
+    return () => ctx.revert();
+  }, []);
+
+  return (
+    <section ref={containerRef} className="relative min-h-screen overflow-hidden">
+      {/* LEFT HALF — deep forest green */}
+      <div className="absolute inset-0 lg:w-[55%] bg-[#0D3320]" />
+      {/* RIGHT HALF — pitch off-white */}
+      <div className="absolute inset-0 left-auto lg:w-[45%] bg-[#F0F2EE]" />
+
+      {/* Pitch SVG on green half */}
+      <div className="hero-bg-pitch absolute inset-0 lg:w-[55%] flex items-center justify-center pointer-events-none">
+        <PitchSVG className="w-full h-full text-white" opacity={0.08} />
+      </div>
+
+      {/* Ghost huge number behind left headline */}
+      <div className="absolute bottom-0 left-0 pointer-events-none select-none overflow-hidden"
+        style={{ width: "55%" }}>
+        <span className="ghost-number-light" style={{ fontSize: "clamp(220px, 28vw, 400px)" }}>10</span>
+      </div>
+
+      {/* Content grid */}
+      <div className="relative z-10 mx-auto max-w-7xl px-6 h-screen flex items-center">
+        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-10 xl:gap-16 w-full items-center pt-20">
+
+          {/* LEFT — Headline */}
+          <div>
+            {/* Badge */}
+            <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.05 }}
+              className="mb-7 inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/10 px-4 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#FF4D00] animate-pulse" />
+              <span className="font-label text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60">
+                Dixon-Coles + SOT · La Liga &amp; UCL
+              </span>
+            </motion.div>
+
+            {/* Headline */}
+            <h1 className="font-headline leading-[0.88] tracking-tight overflow-hidden"
+              style={{ fontSize: "clamp(72px, 9.5vw, 132px)" }}>
+              <div className="overflow-hidden mb-1">
+                <span className="hl-1 block text-white">THIS</span>
+              </div>
+              <div className="overflow-hidden mb-1">
+                <span className="hl-2 block text-white">ISN'T A</span>
+              </div>
+              <div className="overflow-hidden">
+                <span className="hl-3 block" style={{ color: "transparent", WebkitTextStroke: "2.5px #FF4D00" }}>
+                  GUESS.
+                </span>
+              </div>
+            </h1>
+
+            {/* Horizontal rule with ember accent */}
+            <div className="hero-sub mt-7 flex items-center gap-4 mb-6">
+              <div className="h-px flex-1 bg-white/15" />
+              <span className="font-label text-[11px] text-white/40 uppercase tracking-[0.25em]">It's a read.</span>
+              <div className="h-px flex-1 bg-white/15" />
+            </div>
+
+            <p className="hero-sub max-w-lg text-[16px] leading-relaxed text-white/60 font-body font-medium">
+              Real form, expected goals, injuries &amp; H2H — fed into a model backtested on 1,527 matches
+              against bookmaker closing odds. Every number shows its reasoning.
+            </p>
+
+            <div className="hero-ctas mt-9 flex flex-wrap items-center gap-4">
+              <Link href="/login"
+                className="group inline-flex items-center gap-2 rounded-xl bg-[#FF4D00] px-7 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-white transition-all duration-300 hover:bg-[#FF6B35] hover:-translate-y-0.5 shadow-lg hover:shadow-[0_16px_40px_-8px_rgba(255,77,0,0.45)]">
+                Get My First Prediction
+                <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
+              </Link>
+              <a href="#method"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-7 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-white/70 transition-all duration-200 hover:border-white/50 hover:text-white">
+                See the Method
+              </a>
+            </div>
+
+            <div className="hero-strip mt-8 flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-[#FF4D00]" />
+              <span className="font-label text-[10px] uppercase tracking-[0.2em] text-white/35">
+                Every prediction ships with a confidence band — we don't pretend to be certain.
+              </span>
+            </div>
+          </div>
+
+          {/* RIGHT — Match card on off-white side */}
+          <div className="hero-card relative flex justify-center">
+            <MatchCentre />
+          </div>
+        </div>
+      </div>
+
+      {/* Diagonal cut at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 h-24 bg-[#F0F2EE]"
+        style={{ clipPath: "polygon(0 60%, 100% 0, 100% 100%, 0 100%)" }} />
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  TICKER                                                 */
+/* ──────────────────────────────────────────────────────── */
+function Ticker() {
+  const items = [...TICKER, ...TICKER, ...TICKER];
+  return (
+    <div className="relative bg-[#FF4D00] py-3.5 overflow-hidden border-y-4 border-[#0D3320]">
+      {/* Background text texture */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-[0.06] pointer-events-none">
+        <span className="font-headline text-[120px] text-white whitespace-nowrap">FULL TIME RESULTS</span>
+      </div>
+      <div className="flex w-max animate-ticker items-center">
+        {items.map((item, i) => (
+          <span key={i} className="font-label text-[13px] font-bold uppercase tracking-[0.22em] text-white px-8">
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  SCROLL REVEAL                                          */
+/* ──────────────────────────────────────────────────────── */
+function Reveal({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-70px" });
+  return (
+    <motion.div ref={ref} className={className}
+      initial={{ opacity: 0, y: 40 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.75, delay, ease: [0.16, 1, 0.3, 1] }}>
+      {children}
+    </motion.div>
+  );
+}
+
+function STag({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center gap-2 mb-5">
+      <span className="text-[#FF4D00] font-label text-sm">◆</span>
+      <span className="font-label text-[11px] font-bold uppercase tracking-[0.25em] text-[#0D3320]/45">{children}</span>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  THE METHOD                                             */
+/* ──────────────────────────────────────────────────────── */
+const METHOD_CARDS = [
+  { tag: "01", label: "FORM", title: "Current Form", desc: "Last 6 matches · xWpts weighted", note: "recency ξ = 0.004",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+  { tag: "02", label: "xG", title: "Expected Goals", desc: "xG for/against · home & away split", note: "mu · λ (Dixon-Coles)",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> },
+  { tag: "03", label: "OUT", title: "Availability", desc: "Injuries & suspensions tracked", note: "squad delta applied",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+  { tag: "04", label: "H2H", title: "Head-to-Head", desc: "Historical matchup band analysis", note: "tight-score lean",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> },
+];
+
+function Method() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.from(".method-card", {
+        y: 48, opacity: 0, duration: 0.8, stagger: 0.1, ease: "power3.out",
+        scrollTrigger: { trigger: ".method-card", start: "top 82%", toggleActions: "play none none none" },
+      });
+    }, sectionRef);
+    return () => ctx.revert();
+  }, []);
+
+  return (
+    <section id="method" ref={sectionRef} className="scroll-mt-16 relative bg-white py-24 lg:py-36 overflow-hidden">
+      {/* Ghost huge number behind */}
+      <div className="absolute -right-8 top-0 pointer-events-none select-none">
+        <span className="ghost-number" style={{ fontSize: "clamp(200px, 25vw, 360px)" }}>xG</span>
+      </div>
+
+      <div className="relative mx-auto max-w-7xl px-6">
+        <Reveal>
+          <STag>The Method</STag>
+          <h2 className="font-headline leading-[0.88] text-[#0D3320]"
+            style={{ fontSize: "clamp(56px, 7.5vw, 108px)" }}>
+            WHY THIS
+            <br />
+            PREDICTION?
+            <br />
+            <span style={{ color: "#FF4D00" }}>WE CAN SHOW YOU.</span>
+          </h2>
+          <p className="mt-6 max-w-2xl text-[17px] leading-relaxed text-[#0D3320]/55">
+            Transparency is the product. Every number traces back to inputs you can inspect — no black box, no hand-waving.
+          </p>
+        </Reveal>
+
+        {/* 4 cards */}
+        <div className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {METHOD_CARDS.map((c, i) => (
+            <Reveal key={c.tag} delay={0.05 + i * 0.07}>
+              <div className="method-card group h-full rounded-2xl bg-[#F0F2EE] border border-[#0D3320]/08 p-6 hover:bg-[#0D3320] hover:border-transparent transition-all duration-400 cursor-default card-lift">
+                <div className="mb-5 flex items-start justify-between">
+                  <span className="font-label text-[11px] font-bold uppercase tracking-widest text-[#FF4D00] bg-[#FF4D00]/10 px-2.5 py-1 rounded-md group-hover:bg-white/10">
+                    {c.label}
+                  </span>
+                  <span className="font-label text-[10px] text-[#0D3320]/25 group-hover:text-white/25 tabular-nums">{c.tag}</span>
+                </div>
+                <div className="text-[#0D3320]/30 group-hover:text-[#FF4D00] transition-colors duration-300 mb-4">
+                  {c.icon}
+                </div>
+                <h3 className="font-headline text-3xl text-[#0D3320] group-hover:text-white leading-tight mb-2 transition-colors">{c.title}</h3>
+                <p className="text-sm text-[#0D3320]/55 group-hover:text-white/55 leading-relaxed transition-colors">{c.desc}</p>
+                <p className="mt-3 font-label text-[10px] text-[#0D3320]/30 group-hover:text-white/30 tracking-widest transition-colors">{c.note}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+
+        {/* Model banner */}
+        <Reveal delay={0.12}>
+          <div className="mt-6 rounded-2xl border-2 border-[#0D3320] bg-[#0D3320] px-7 py-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="font-headline text-2xl text-white">DIXON-COLES + POISSON</p>
+                <p className="text-sm text-white/50 mt-1">
+                  Scoring model calibrated on 1,527 real matches — blended with a recency-aware SOT layer.
+                </p>
+              </div>
+              <span className="rounded-xl bg-[#FF4D00] px-5 py-2.5 font-label text-[12px] font-bold uppercase tracking-widest text-white">
+                Fit → Predict
+              </span>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  TRACK RECORD                                           */
+/* ──────────────────────────────────────────────────────── */
+const STATS = [
+  { value: "50.3", suffix: "%", label: "Calibration Accuracy", desc: "vs spread of our own probabilities", accent: "#0D3320" },
+  { value: "1.022", suffix: "", label: "Log-Loss Score", desc: "lower is better — stable out-of-sample", accent: "#0D3320" },
+  { value: "52.4", suffix: "%", label: "Bookmaker Benchmark", desc: "the house — the bar we chase", accent: "#FF4D00" },
+  { value: "1527", suffix: "", label: "Matches Fitted", desc: "Dixon-Coles + SOT blend w=0.4", accent: "#0D3320" },
+];
+
+function TrackRecord() {
+  return (
+    <section id="track" className="scroll-mt-16 bg-[#0D3320] py-24 lg:py-36 relative overflow-hidden"
+      style={{ clipPath: "polygon(0 3%, 100% 0, 100% 97%, 0 100%)" }}>
+      {/* Pitch SVG decoration */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <PitchSVG className="w-full h-full text-white max-w-5xl" opacity={0.05} />
+      </div>
+      {/* Ghost number */}
+      <div className="absolute -left-4 top-0 pointer-events-none select-none">
+        <span className="ghost-number-light" style={{ fontSize: "clamp(180px, 22vw, 320px)" }}>90</span>
+      </div>
+
+      <div className="relative mx-auto max-w-7xl px-6 pt-8">
+        <Reveal>
+          <STag>The Receipts</STag>
+          <h2 className="font-headline leading-[0.88] text-white"
+            style={{ fontSize: "clamp(56px, 7.5vw, 108px)" }}>
+            WE SHOW
+            <br />
+            ACCURACY,
+            <br />
+            <span style={{ color: "transparent", WebkitTextStroke: "2px #FF4D00" }}>NOT JUST CONFIDENCE.</span>
+          </h2>
+          <p className="mt-6 max-w-2xl text-[17px] leading-relaxed text-white/50">
+            A confidence score is worthless if you never check it against reality. We backtest against
+            bookmaker closing odds — and publish the result, win or lose.
+          </p>
+        </Reveal>
+
+        <div className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {STATS.map((s, i) => (
+            <Reveal key={s.label} delay={0.06 + i * 0.07}>
+              <div className="rounded-2xl bg-white/05 border border-white/10 p-7 hover:bg-white/08 transition-colors duration-300 relative overflow-hidden">
+                <div className="absolute -right-2 -bottom-4 opacity-[0.04] pointer-events-none">
+                  <span className="font-headline" style={{ fontSize: "88px" }}>{i + 1}</span>
+                </div>
+                <div className="font-headline" style={{ fontSize: "clamp(52px, 6vw, 76px)", lineHeight: 1, color: s.accent === "#FF4D00" ? "#FF4D00" : "white" }}>
+                  <CountUp value={s.value} suffix={s.suffix} color={s.accent === "#FF4D00" ? "#FF4D00" : "white"} />
+                </div>
+                <p className="mt-3 font-label text-[12px] font-bold uppercase tracking-wide text-white/60">{s.label}</p>
+                <p className="mt-1 text-sm text-white/35 leading-snug">{s.desc}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+
+        <Reveal delay={0.14}>
+          <p className="mt-10 max-w-3xl text-sm leading-relaxed text-white/35 pb-8">
+            Honest framing: beating bookmakers long-term is hard — which is exactly why we publish
+            the comparison instead of hiding it. Our edge is transparency and discipline, not certainty.
+          </p>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  COMPETITIONS                                           */
+/* ──────────────────────────────────────────────────────── */
+function Competitions() {
+  return (
+    <section id="comps" className="scroll-mt-16 bg-white py-24 lg:py-36 relative overflow-hidden">
+      {/* Ghost number */}
+      <div className="absolute -right-4 bottom-0 pointer-events-none select-none">
+        <span className="ghost-number" style={{ fontSize: "clamp(180px, 22vw, 320px)" }}>11</span>
+      </div>
+
+      <div className="relative mx-auto max-w-7xl px-6">
+        <Reveal>
+          <STag>Where We Live</STag>
+          <h2 className="font-headline leading-[0.88] text-[#0D3320]"
+            style={{ fontSize: "clamp(56px, 7.5vw, 108px)" }}>
+            TWO
+            <br />
+            COMPETITIONS.
+            <br />
+            <span style={{ color: "#FF4D00" }}>TRACKED OBSESSIVELY.</span>
+          </h2>
+        </Reveal>
+
+        <div className="mt-16 grid gap-6 md:grid-cols-2">
+          {/* La Liga */}
+          <Reveal delay={0.08}>
+            <div className="group relative overflow-hidden rounded-3xl bg-[#0D3320] min-h-[440px] flex flex-col justify-between p-10 card-lift cursor-default">
+              {/* Pitch lines overlay */}
+              <PitchSVG className="absolute inset-0 w-full h-full text-white" opacity={0.06} />
+              {/* Corner graphic */}
+              <div className="absolute -bottom-28 -right-28 h-72 w-72 rounded-full border-2 border-white/10" />
+              <div className="absolute -bottom-20 -right-20 h-52 w-52 rounded-full border border-white/06" />
+              {/* Ember glow on hover */}
+              <div className="absolute inset-0 bg-[#FF4D00] opacity-0 group-hover:opacity-[0.04] transition-opacity duration-500 rounded-3xl" />
+
+              <div className="relative">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 mb-7">
+                  <span className="h-2 w-2 rounded-full bg-[#22c55e]" />
+                  <span className="font-label text-[10px] font-bold uppercase tracking-[0.22em] text-white/60">Spain · Top Flight</span>
+                </div>
+                <h3 className="font-headline text-[80px] leading-[0.85] text-white tracking-tight">LA<br />LIGA</h3>
+                <p className="mt-5 max-w-sm text-[15px] leading-relaxed text-white/50">
+                  Every matchday tracked. Form curves, xG trajectories and injury deltas across all 380 fixtures — zero guesswork.
+                </p>
+              </div>
+
+              <div className="relative flex items-end justify-between">
+                <span className="font-label text-[11px] tracking-widest text-[#22c55e]/60 uppercase">380 Fixtures · 2026/27</span>
+                <div className="font-headline text-[72px] text-white/08 leading-none">LA</div>
+              </div>
+            </div>
+          </Reveal>
+
+          {/* UCL */}
+          <Reveal delay={0.15}>
+            <div className="group relative overflow-hidden rounded-3xl bg-[#060D20] min-h-[440px] flex flex-col justify-between p-10 card-lift cursor-default">
+              {/* Star dot pattern */}
+              <div className="absolute inset-0 opacity-[0.08]"
+                style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.6) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+              {/* Blue glow */}
+              <div className="absolute -top-20 right-0 h-80 w-80 rounded-full pointer-events-none"
+                style={{ background: "radial-gradient(closest-side, rgba(56,189,248,0.20), transparent 70%)" }} />
+              <div className="absolute inset-0 bg-[#38bdf8] opacity-0 group-hover:opacity-[0.03] transition-opacity duration-500 rounded-3xl" />
+
+              <div className="relative">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 mb-7">
+                  <span className="h-2 w-2 rounded-full bg-[#38bdf8]" />
+                  <span className="font-label text-[10px] font-bold uppercase tracking-[0.22em] text-white/60">Europe · Champions</span>
+                </div>
+                <h3 className="font-headline text-[68px] leading-[0.85] text-white tracking-tight">UEFA<br />CHAMPIONS<br />LEAGUE</h3>
+                <p className="mt-5 max-w-sm text-[15px] leading-relaxed text-white/45">
+                  The knockout moments where one read separates clarity from panic. League phase through to the final.
+                </p>
+              </div>
+
+              <div className="relative flex items-end justify-between">
+                <span className="font-label text-[11px] tracking-widest text-[#38bdf8]/60 uppercase">League Phase → Final</span>
+                <div className="font-headline text-[72px] text-white/08 leading-none">UCL</div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  CTA BANNER                                             */
+/* ──────────────────────────────────────────────────────── */
+function CTABanner() {
+  return (
+    <section className="relative bg-[#FF4D00] py-24 lg:py-32 overflow-hidden"
+      style={{ clipPath: "polygon(0 4%, 100% 0, 100% 100%, 0 100%)" }}>
+      {/* Ghost text decoration */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.07]">
+        <span className="font-headline text-white whitespace-nowrap" style={{ fontSize: "clamp(80px, 12vw, 180px)" }}>
+          ONSIDE ONSIDE ONSIDE
+        </span>
+      </div>
+      {/* Diagonal stripe accents */}
+      <div className="absolute inset-0 opacity-[0.04]"
+        style={{ backgroundImage: "repeating-linear-gradient(-45deg, white 0, white 2px, transparent 2px, transparent 32px)" }} />
+
+      <div className="relative mx-auto max-w-5xl px-6 text-center pt-8">
+        <Reveal>
+          <h2 className="font-headline leading-[0.88] text-white"
+            style={{ fontSize: "clamp(60px, 8.5vw, 116px)" }}>
+            SEE THE READ<br />BEFORE YOU<br />
+            <span style={{ color: "transparent", WebkitTextStroke: "2.5px white" }}>PLACE ANYTHING.</span>
+          </h2>
+          <p className="mx-auto mt-7 max-w-xl text-[17px] leading-relaxed text-white/65">
+            Your first prediction is free. We'll show you the numbers, the confidence band
+            and the reasoning — then you decide.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <Link href="/login"
+              className="group inline-flex items-center gap-2 rounded-xl bg-[#0D3320] px-8 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-white transition-all duration-300 hover:bg-[#0f2d1f] hover:-translate-y-0.5 shadow-xl hover:shadow-[0_20px_48px_-8px_rgba(13,51,32,0.5)]">
+              Get My First Prediction
+              <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
+            </Link>
+            <a href="#method"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-white/30 px-8 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-white/80 transition-all duration-200 hover:border-white hover:text-white">
+              Revisit the Method
+            </a>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────── */
+/*  FOOTER                                                 */
+/* ──────────────────────────────────────────────────────── */
 function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-[#08120c]/70 px-6 py-10">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
-        <span className="flex items-center gap-2 font-display text-sm font-bold text-white">
-          <span className="h-3 w-3 rotate-45 rounded-[2px] bg-[#a3e635]" /> ONSIDE
+    <footer className="bg-[#0A1A10] px-6 py-10">
+      <div className="mx-auto max-w-7xl flex flex-col items-center justify-between gap-4 sm:flex-row">
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="h-6 w-6 bg-[#FF4D00] flex-shrink-0"
+            style={{ clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }} />
+          <span className="font-headline text-xl text-white tracking-wider">ONSIDE</span>
+        </Link>
+        <p className="text-xs text-white/30 text-center font-body">
+          Probability, not certainty. La Liga + UEFA Champions League.
+        </p>
+        <span className="font-label text-[10px] uppercase tracking-widest text-white/20">
+          © {new Date().getFullYear()} Onside
         </span>
-        <p className="text-xs text-white/45">Probability, not certainty. La Liga + UEFA Champions League.</p>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-white/35">© {new Date().getFullYear()} Onside</span>
       </div>
     </footer>
   );
 }
 
-/* ================================================================== */
-/*  PAGE                                                               */
-/* ================================================================== */
-
+/* ──────────────────────────────────────────────────────── */
+/*  PAGE                                                   */
+/* ──────────────────────────────────────────────────────── */
 export default function Landing() {
   return (
-    <main className="relative min-h-screen overflow-x-clip bg-[#08120c] text-white">
-      <Pitch />
-      <div className="relative z-10 mx-auto max-w-6xl px-6">
-        <Nav />
-
-        {/* ---------------- HERO ---------------- */}
-        <section className="grid items-center gap-12 pb-28 pt-10 lg:grid-cols-[1.1fr_1fr] lg:pt-16">
-          <div>
-            <motion.div {...useReveal()}>
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#22c55e]/30 bg-[#22c55e]/10 px-3 py-1 font-display text-[11px] font-semibold uppercase tracking-[0.22em] text-[#a3e635]">
-                Dixon-Coles + SOT · La Liga &amp; UCL
-              </div>
-            </motion.div>
-
-            <motion.h1 {...useReveal({ delay: 0.08 })}
-              className="font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
-              This isn&apos;t a guess.
-              <br />
-              <span className="text-transparent" style={{ WebkitTextStroke: "1.5px #a3e635" }}>It&apos;s a read.</span>
-            </motion.h1>
-
-            <motion.p {...useReveal({ delay: 0.16 })}
-              className="mt-6 max-w-xl text-lg leading-relaxed text-white/70">
-              We feed real form, expected goals, injuries and head-to-head history into a model we&apos;ve
-              backtested against bookmaker odds. Then we show you the exact reasoning behind every number.
-            </motion.p>
-
-            <motion.div {...useReveal({ delay: 0.24 })} className="mt-9 flex flex-wrap items-center gap-4">
-              <Link href="/login" className="group inline-flex items-center gap-2 rounded-xl bg-[#a3e635] px-7 py-3.5 font-display text-sm font-bold uppercase tracking-wider text-[#08120c] transition hover:bg-[#bef264]">
-                Get my first prediction
-                <span className="transition group-hover:translate-x-1">→</span>
-              </Link>
-              <Link href="#how" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-7 py-3.5 font-display text-sm font-bold uppercase tracking-wider text-white/80 transition hover:border-[#a3e635]/50 hover:text-[#a3e635]">
-                See the method
-              </Link>
-            </motion.div>
-
-            <motion.div {...useReveal({ delay: 0.32 })} className="mt-8 flex items-center gap-2 font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b]" />
-              Every prediction ships with a confidence band — we don&apos;t pretend to be certain.
-            </motion.div>
-          </div>
-
-          <MatchCentre />
-        </section>
-
-        {/* ---------------- TICKER ---------------- */}
-        <motion.div {...useReveal()} className="-mx-6 mb-6 overflow-hidden border-y border-white/10 bg-black/25 py-2.5">
-          <div className="flex w-max animate-[ticker_28s_linear_infinite] items-center gap-10 pr-10">
-            {[...TICKER, ...TICKER].map((t, i) => (
-              <span key={i} className="font-display text-xs font-semibold uppercase tracking-[0.16em] text-white/45">{t}</span>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* ---------------- HOW IT THINKS ---------------- */}
-        <section id="how" className="scroll-mt-24 py-24">
-          <motion.div {...useReveal()}>
-            <SectionTag>The method</SectionTag>
-            <h2 className="mt-4 max-w-2xl font-display text-4xl font-bold uppercase leading-tight tracking-tight sm:text-5xl">
-              Why this prediction?<br /><span className="text-[#a3e635]">We can show you.</span>
-            </h2>
-            <p className="mt-4 max-w-2xl text-lg text-white/65">
-              Transparency is the product. Every number traces back to inputs you can inspect — no black box.
-            </p>
-          </motion.div>
-
-          <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            {METHOD.map((row, i) => (
-              <motion.div key={row.tag} {...useReveal({ delay: 0.08 + i * 0.07 })}
-                className="group rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur transition hover:border-[#a3e635]/40 hover:bg-[#a3e635]/[0.05]">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="font-display text-sm font-bold uppercase tracking-[0.2em] text-[#a3e635]">{row.tag}</span>
-                  <span className="h-2 w-2 rounded-sm border border-[#a3e635]/50" />
-                </div>
-                <p className="text-lg font-semibold text-white">{row.label}</p>
-                <p className="mt-1 text-sm text-white/55">{row.value}</p>
-                {row.note && <p className="mt-3 font-mono text-[11px] text-[#a3e635]/70">{row.note}</p>}
-              </motion.div>
-            ))}
-          </div>
-
-          <motion.div {...useReveal({ delay: 0.1 })} className="mt-6 rounded-2xl border border-[#22c55e]/30 bg-gradient-to-r from-[#22c55e]/10 to-transparent px-6 py-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-display text-base font-bold uppercase tracking-wide">Dixon-Coles + Poisson</p>
-                <p className="text-sm text-white/60">Scoring model calibrated on 1,527 real matches — then blended with a recency-aware SOT layer.</p>
-              </div>
-              <span className="rounded-lg bg-[#a3e635] px-4 py-2 font-display text-xs font-bold uppercase tracking-wider text-[#08120c]">fit → predict</span>
-            </div>
-          </motion.div>
-        </section>
-
-        {/* ---------------- TRACK RECORD ---------------- */}
-        <section id="track" className="scroll-mt-24 border-t border-white/10 py-24">
-          <motion.div {...useReveal()}>
-            <SectionTag>The receipts</SectionTag>
-            <h2 className="mt-4 max-w-2xl font-display text-4xl font-bold uppercase leading-tight tracking-tight sm:text-5xl">
-              We show accuracy, not just confidence.
-            </h2>
-            <p className="mt-4 max-w-2xl text-lg text-white/65">
-              A confidence score is worthless if you never check it against reality. We backtest against
-              bookmaker closing odds — and publish the result, win or lose.
-            </p>
-          </motion.div>
-
-          <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { v: "50.3%", l: "Calibration accuracy", d: "vs the spread of our own probabilities", c: "text-[#a3e635]" },
-              { v: "1.022", l: "Log-loss", d: "lower is better — stable out-of-sample", c: "text-white" },
-              { v: "52.4%", l: "Benchmark · bookies", d: "the house is the bar we chase", c: "text-[#f59e0b]" },
-              { v: "1527", l: "Matches fitted", d: "Dixon-Coles + SOT, blend w=0.4", c: "text-white" },
-            ].map((s, i) => (
-              <motion.div key={s.l} {...useReveal({ delay: 0.08 + i * 0.07 })}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                <p className={`font-display text-5xl font-bold ${s.c}`}>{s.v}</p>
-                <p className="mt-2 font-display text-sm font-semibold uppercase tracking-wide text-white/80">{s.l}</p>
-                <p className="mt-1 text-sm text-white/50">{s.d}</p>
-              </motion.div>
-            ))}
-          </div>
-
-          <motion.p {...useReveal({ delay: 0.12 })} className="mt-8 max-w-3xl text-sm leading-relaxed text-white/50">
-            The honest framing: bookmakers remain the bar, and beating them is hard — which is exactly why we
-            publish the comparison instead of hiding it. Our edge is transparency and discipline, not certainty.
-          </motion.p>
-        </section>
-
-        {/* ---------------- COMPETITIONS ---------------- */}
-        <section id="comps" className="scroll-mt-24 border-t border-white/10 py-24">
-          <motion.div {...useReveal()}>
-            <SectionTag>Where we live</SectionTag>
-            <h2 className="mt-4 max-w-2xl font-display text-4xl font-bold uppercase leading-tight tracking-tight sm:text-5xl">
-              Two competitions. Tracked obsessively.
-            </h2>
-          </motion.div>
-
-          <div className="mt-14 grid gap-6 md:grid-cols-2">
-            {[
-              { c: "La Liga", d: "la-liga", tag: "Spain · Top flight", desc: "Every matchday, every club — form curves, xG trajectories and injury deltas tracked all season.", n: "380 fixtures · 2026/27", hue: "#22c55e" },
-              { c: "UEFA Champions League", d: "ucl", tag: "Europe · Champions", desc: "The knockout-stage moments where one read separates a calm punt from a panic bet.", n: "League phase → final", hue: "#38bdf8" },
-            ].map((s, i) => (
-              <motion.div key={s.c} {...useReveal({ delay: 0.08 + i * 0.1 })}
-                className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] p-8"
-                onMouseEnter={() => {}}>
-                <div aria-hidden className="absolute inset-0 opacity-50"
-                  style={{ background: `radial-gradient(120% 120% at 0% 0%, ${s.hue}22, transparent 55%)` }} />
-                <div className="relative">
-                  <p className="font-display text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50">{s.tag}</p>
-                  <h3 className="mt-3 font-display text-3xl font-bold uppercase tracking-tight">{s.c}</h3>
-                  <p className="mt-3 max-w-md text-sm leading-relaxed text-white/60">{s.desc}</p>
-                  <p className="mt-5 font-mono text-[11px] tracking-widest" style={{ color: s.hue }}>{s.n}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* ---------------- CTA ---------------- */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 px-8 py-20 text-center">
-          <div aria-hidden className="absolute inset-0"
-            style={{ background: "linear-gradient(180deg, rgba(163,230,53,0.10), rgba(8,18,12,0) 70%)" }} />
-          <motion.div {...useReveal()} className="relative">
-            <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold uppercase leading-tight tracking-tight sm:text-5xl">
-              See the read before you place anything.
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-lg text-white/65">
-              Your first prediction is free. We&apos;ll show you the numbers, the confidence band and the
-              reasoning — then you decide.
-            </p>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
-              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl bg-[#a3e635] px-8 py-4 font-display text-sm font-bold uppercase tracking-wider text-[#08120c] transition hover:bg-[#bef264]">
-                Get my first prediction <span>→</span>
-              </Link>
-              <Link href="#how" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-8 py-4 font-display text-sm font-bold uppercase tracking-wider text-white/80 transition hover:border-[#a3e635]/50 hover:text-[#a3e635]">
-                Revisit the method
-              </Link>
-            </div>
-          </motion.div>
-        </section>
-
-        <Footer />
-        <div className="h-16" />
-      </div>
+    <main className="relative overflow-x-clip">
+      <Nav />
+      <Hero />
+      <Ticker />
+      <Method />
+      <TrackRecord />
+      <Competitions />
+      <CTABanner />
+      <Footer />
     </main>
   );
 }
