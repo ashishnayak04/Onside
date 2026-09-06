@@ -9,6 +9,45 @@ interface ConfigEntry {
   description: string | null;
 }
 
+function InfoRow({
+  label,
+  value,
+  masked = false,
+  mono = true,
+}: {
+  label: string;
+  value: string;
+  masked?: boolean;
+  mono?: boolean;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-chalk/10">
+      <span className="text-sm text-stale">{label}</span>
+      <div className="flex items-center gap-2">
+        <span
+          className="text-sm"
+          style={{
+            color: masked && !revealed ? "var(--stale)" : "var(--chalk)",
+            fontFamily: mono ? "monospace" : "inherit",
+          }}
+        >
+          {masked && !revealed ? "••••••••" : value || "Not set"}
+        </span>
+        {masked && (
+          <button
+            onClick={() => setRevealed(!revealed)}
+            className="text-xs px-2 py-0.5 rounded border border-chalk/10 text-stale hover:text-chalk"
+            style={{ background: "var(--ink)" }}
+          >
+            {revealed ? "Hide" : "Show"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PipelinePage() {
   const [configs, setConfigs] = useState<ConfigEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +70,17 @@ export default function PipelinePage() {
   const get = (key: string) => configs.find((c) => c.key === key);
 
   if (loading) {
-    return <div className="text-[#71717a]">Loading pipeline info...</div>;
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex items-center gap-3">
+          <svg className="animate-spin w-5 h-5 text-leaf" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-sm text-stale">Loading pipeline info...</p>
+        </div>
+      </div>
+    );
   }
 
   const modelConfig = get("prediction_model");
@@ -40,57 +89,116 @@ export default function PipelinePage() {
   const competitionsConfig = get("active_competitions");
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Pipeline Configuration</h1>
+    <div className="max-w-5xl">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="page-header mb-1">
+          Pipeline<span className="text-ember">.</span>
+        </h1>
+        <p className="text-sm text-stale">
+          Prediction pipeline status and model settings
+        </p>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Data Pipeline</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-sm text-[#71717a]">Schedule (Cron)</span>
-              <span className="text-sm font-mono text-[#22c55e]">{scheduleConfig?.value || "Not set"}</span>
+      {/* Status banner */}
+      <div
+        className="flex items-center gap-3 rounded-xl px-4 py-3 mb-6"
+        style={{ background: "rgba(20,160,95,0.08)", border: "1px solid rgba(20,160,95,0.25)" }}
+      >
+        <span className="relative flex w-2 h-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: "#14A05F" }} />
+          <span className="relative inline-flex rounded-full w-2 h-2" style={{ background: "#14A05F" }} />
+        </span>
+        <p className="text-sm font-medium text-leaf2">
+          Pipeline operational — running on schedule
+        </p>
+        <div className="ml-auto">
+          <Link
+            href="/admin/config"
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+            style={{ color: "#221A00", background: "var(--ember)" }}
+          >
+            Configure →
+          </Link>
+        </div>
+      </div>
+
+      {/* Cards grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+        {/* Data Pipeline card */}
+        <div className="dash-card rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: "rgba(20,160,95,0.14)", color: "#14A05F" }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-[#71717a]">API-Football Key</span>
-              <span className="text-sm font-mono text-[#22c55e]">{apiConfig?.value ? "••••••••" : "Not set"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-[#71717a]">Active Competitions</span>
-              <span className="text-sm text-[#a1a1aa]">{competitionsConfig?.value || "Not set"}</span>
-            </div>
+            <h2 className="text-base font-semibold text-leaf2" style={{ fontFamily: "var(--font-label)" }}>
+              Data Pipeline
+            </h2>
           </div>
+
+          <InfoRow label="Schedule (Cron)" value={scheduleConfig?.value || "Not set"} />
+          <InfoRow label="API-Football Key" value={apiConfig?.value || "Not set"} masked={!!apiConfig?.value} />
+          <InfoRow
+            label="Active Competitions"
+            value={competitionsConfig?.value || "Not set"}
+            mono={false}
+          />
         </div>
 
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Model</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-sm text-[#71717a]">Active Model</span>
-              <span className="text-sm font-mono text-[#22c55e]">{modelConfig?.value || "Not set"}</span>
+        {/* Model card */}
+        <div className="dash-card rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: "rgba(242,176,28,0.14)", color: "#C98900" }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
             </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-[#71717a]">Status</span>
-              <span className="text-sm text-[#71717a]">
-                Configure via the System Config page
-              </span>
-            </div>
+            <h2 className="text-base font-semibold text-flame" style={{ fontFamily: "var(--font-label)" }}>
+              Model
+            </h2>
+          </div>
+
+          <InfoRow label="Active Model" value={modelConfig?.value || "Not set"} />
+          <div className="flex items-center justify-between py-3 border-b border-chalk/10">
+            <span className="text-sm text-stale">Status</span>
+            <span className="text-xs text-stale">
+              Configure via{" "}
+              <Link href="/admin/config" className="hover:underline text-flame">
+                System Config
+              </Link>
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="mt-6 bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-        <h2 className="text-lg font-semibold mb-2">About the Pipeline</h2>
-        <p className="text-sm text-[#71717a] leading-relaxed">
+      {/* About the pipeline */}
+      <div className="dash-card rounded-2xl p-6">
+        <h2 className="text-base font-semibold mb-3 text-chalk" style={{ fontFamily: "var(--font-label)" }}>
+          About the Pipeline
+        </h2>
+        <p className="text-sm leading-relaxed mb-3 text-stale">
           The Onside prediction pipeline runs as a scheduled Python job. It pulls live data from
           API-Football, engineers features (rolling form, xG/xA, head-to-head, rest days, injuries),
           and runs the prediction model to generate match outcome and player prop predictions.
           Results are written to the PostgreSQL database and displayed on this dashboard.
         </p>
-        <p className="text-sm text-[#71717a] leading-relaxed mt-3">
+        <p className="text-sm leading-relaxed text-stale">
           To modify pipeline settings, API keys, model parameters, or competition selections,
-          use the <Link href="/admin/config" className="text-[#22c55e] hover:underline">System Config</Link> page.
-          All settings are stored in the database and take effect without code changes.
+          use the{" "}
+          <Link href="/admin/config" className="font-medium hover:underline text-leaf2">
+            System Config
+          </Link>{" "}
+          page. All settings are stored in the database and take effect without code changes.
         </p>
       </div>
     </div>

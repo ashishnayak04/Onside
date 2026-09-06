@@ -101,35 +101,27 @@ export default function Sidebar({ role, userName, isOpen = true, onClose }: Side
   }
 
   const sidebarContent = (
-    <aside
-      className="w-64 flex flex-col h-full"
-      style={{
-        background: "linear-gradient(180deg, #0D3320 0%, #0A2818 100%)",
-        borderRight: "1px solid rgba(255,255,255,0.07)",
-      }}
-    >
+    <aside className="w-64 flex flex-col h-full bg-panel border-r border-chalk/10">
       {/* Logo */}
       <div
         className="px-6 py-5 flex items-center justify-between"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+        style={{ borderBottom: "1px solid var(--ghostline)" }}
       >
         <div>
           <h1
-            className="text-2xl text-white tracking-wider"
+            className="text-2xl text-chalk"
             style={{ fontFamily: "var(--font-headline)", letterSpacing: "0.1em" }}
           >
-            ONSIDE
+            ONSIDE<span className="text-ember">.</span>
           </h1>
-          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+          <p className="text-xs mt-0.5 text-stale">
             {role === "super_admin" ? "Admin Panel" : "Predictions Dashboard"}
           </p>
         </div>
-        {/* Close button on mobile */}
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden p-1.5 rounded-lg transition-colors"
-            style={{ color: "rgba(255,255,255,0.5)" }}
+            className="lg:hidden p-1.5 rounded-lg transition-colors text-stale hover:text-chalk"
             aria-label="Close sidebar"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,32 +148,32 @@ export default function Sidebar({ role, userName, isOpen = true, onClose }: Side
               style={
                 isActive
                   ? {
-                      background: "rgba(255,255,255,0.12)",
-                      color: "#ffffff",
-                      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)",
+                      background: "rgba(242,176,28,0.14)",
+                      color: "#221A00",
+                      boxShadow: "inset 0 0 0 1px rgba(242,176,28,0.25)",
                     }
                   : {
-                      color: "rgba(255,255,255,0.55)",
+                      color: "var(--stale)",
                     }
               }
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)";
-                  (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.85)";
+                  (e.currentTarget as HTMLElement).style.background = "var(--ink)";
+                  (e.currentTarget as HTMLElement).style.color = "var(--chalk)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isActive) {
                   (e.currentTarget as HTMLElement).style.background = "";
-                  (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.55)";
+                  (e.currentTarget as HTMLElement).style.color = "var(--stale)";
                 }
               }}
             >
               <span
                 style={
                   isActive
-                    ? { color: "#4ade80" }
-                    : { color: "rgba(255,255,255,0.4)" }
+                    ? { color: "#C98900" }
+                    : { color: "var(--stale)" }
                 }
               >
                 {link.icon}
@@ -190,7 +182,7 @@ export default function Sidebar({ role, userName, isOpen = true, onClose }: Side
               {isActive && (
                 <span
                   className="ml-auto w-1.5 h-1.5 rounded-full"
-                  style={{ background: "#4ade80" }}
+                  style={{ background: "var(--ember)" }}
                 />
               )}
             </Link>
@@ -201,37 +193,33 @@ export default function Sidebar({ role, userName, isOpen = true, onClose }: Side
       {/* User footer */}
       <div
         className="px-3 py-4"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
+        style={{ borderTop: "1px solid var(--ghostline)" }}
       >
-        <div className="flex items-center gap-3 px-3 py-2 rounded-xl mb-1"
-          style={{ background: "rgba(255,255,255,0.05)" }}>
+        <div className="flex items-center gap-3 px-3 py-2 rounded-xl mb-1 bg-ink">
           <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-            style={{ background: "rgba(74,222,128,0.2)", color: "#4ade80" }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 text-leaf2"
+            style={{ background: "rgba(20,160,95,0.15)" }}
           >
             {userName.charAt(0).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{userName}</p>
-            <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-sm font-medium text-chalk">{userName}</p>
+            <p className="text-xs text-stale">
               {role === "super_admin" ? "Super Admin" : "Member"}
             </p>
           </div>
         </div>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
-          style={{ color: "rgba(255,255,255,0.45)" }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-stale hover:text-danger2"
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.12)";
-            (e.currentTarget as HTMLElement).style.color = "#f87171";
+            (e.currentTarget as HTMLElement).style.background = "rgba(217,59,62,0.10)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.background = "";
-            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.45)";
           }}
         >
-          <svg className="w-4.5 h-4.5 w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
           Sign Out

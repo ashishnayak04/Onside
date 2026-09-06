@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Manrope, Space_Grotesk } from "next/font/google";
+import { Anton, Manrope, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const bebasNeue = Bebas_Neue({
-  variable: "--font-headline",
+const anton = Anton({
+  variable: "--font-anton",
   subsets: ["latin"],
   weight: "400",
 });
 
 const manrope = Manrope({
-  variable: "--font-body",
+  variable: "--font-manrope",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
 });
 
 const spaceGrotesk = Space_Grotesk({
-  variable: "--font-label",
+  variable: "--font-grotesk",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -30,10 +30,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${bebasNeue.variable} ${manrope.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      className={`${anton.variable} ${manrope.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
     >
-      <body className="min-h-full flex flex-col bg-[#F5F5F0] text-[#1B4332]">{children}</body>
+      <body className="min-h-full flex flex-col bg-ink text-chalk">{children}</body>
     </html>
   );
 }
-

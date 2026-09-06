@@ -49,8 +49,10 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
         <div>
-          <h1 className="page-header mb-1">Fixtures</h1>
-          <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.7 }}>
+          <h1 className="page-header mb-1">
+            Fixtures<span className="text-ember">.</span>
+          </h1>
+          <p className="text-sm text-stale">
             {matches.length} total · {filtered.length} shown
           </p>
         </div>
@@ -86,20 +88,19 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
         >
           <div
             className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "rgba(13,51,32,0.06)" }}
+            style={{ background: "var(--ink)" }}
           >
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--forest-mid)", opacity: 0.4 }}>
+            <svg className="w-7 h-7 text-stale" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
-          <p className="text-sm font-medium" style={{ color: "var(--forest)", opacity: 0.6 }}>
+          <p className="text-sm font-medium text-stale">
             No fixtures found{activeFilter !== "All" ? ` for ${activeFilter}` : ""}.
           </p>
           {activeFilter !== "All" && (
             <button
               onClick={() => setActiveFilter("All")}
-              className="mt-3 text-xs font-semibold"
-              style={{ color: "var(--forest-mid)" }}
+              className="mt-3 text-xs font-semibold text-flame"
             >
               Show all fixtures →
             </button>
@@ -111,37 +112,35 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
             <div key={competition}>
               <div className="flex items-center gap-3 mb-3">
                 <CompBadge competition={competition} />
-                <span className="text-xs font-medium" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>
+                <span className="text-xs font-medium text-stale">
                   {compMatches.length} match{compMatches.length !== 1 ? "es" : ""}
                 </span>
               </div>
-              <div className="dash-card overflow-hidden">
+              <div className="dash-card overflow-hidden rounded-2xl">
                 {compMatches.map((match, i) => (
                   <Link
                     key={match.id as string}
                     href={`/dashboard/matches/${match.id as string}`}
-                    className="flex items-center gap-4 px-6 py-4 transition-all duration-150 group"
+                    className="flex items-center gap-4 px-6 py-4 transition-all duration-150 group hover:bg-ink"
                     style={{
                       borderBottom: i < compMatches.length - 1 ? "1px solid var(--border)" : "none",
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(13,51,32,0.03)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
                   >
                     {/* Teams */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="text-right flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                        <p className="text-sm font-semibold truncate text-chalk">
                           {(match.home_team_name as string) || "TBD"}
                         </p>
                       </div>
                       <div
                         className="px-3 py-1 rounded-lg text-xs font-mono shrink-0"
-                        style={{ background: "var(--mist)", color: "var(--forest-mid)" }}
+                        style={{ background: "var(--ink)", color: "var(--stale)" }}
                       >
                         VS
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                        <p className="text-sm font-semibold truncate text-chalk">
                           {(match.away_team_name as string) || "TBD"}
                         </p>
                       </div>
@@ -153,19 +152,19 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
                         <span
                           className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
                           style={{
-                            background: "rgba(27,94,55,0.10)",
-                            color: "var(--forest-mid)",
+                            background: "rgba(20,160,95,0.12)",
+                            color: "#0B7A45",
                             fontFamily: "var(--font-label)",
                           }}
                         >
                           {match.predicted_outcome as string} · {Math.round((match.confidence as number) * 100)}%
                         </span>
                       ) : (
-                        <span className="text-xs" style={{ color: "var(--forest-mid)", opacity: 0.4 }}>
+                        <span className="text-xs text-stale">
                           No prediction
                         </span>
                       )}
-                      <p className="text-xs" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>
+                      <p className="text-xs text-stale">
                         {new Date(match.match_date as string).toLocaleDateString("en-GB", {
                           weekday: "short",
                           day: "numeric",
@@ -176,11 +175,10 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
                     </div>
 
                     <svg
-                      className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-30 transition-opacity"
+                      className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-30 transition-opacity text-chalk"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
-                      style={{ color: "var(--forest)" }}
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>

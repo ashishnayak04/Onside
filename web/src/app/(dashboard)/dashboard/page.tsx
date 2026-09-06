@@ -48,63 +48,61 @@ export default async function DashboardHome() {
     <div className="max-w-5xl mx-auto">
       {/* Page header */}
       <div className="mb-8">
-        <h1 className="page-header mb-1">Dashboard</h1>
-        <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.7 }}>
+        <h1 className="page-header mb-1">
+          Dashboard<span className="text-ember">.</span>
+        </h1>
+        <p className="text-sm text-stale">
           Your predictions overview at a glance
         </p>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <div className="dash-card stat-accent-green p-6">
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+        <div className="dash-card stat-accent-leaf p-6 rounded-2xl">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2 text-stale" style={{ fontFamily: "var(--font-label)" }}>
             Upcoming Fixtures
           </p>
-          <p className="text-4xl font-black" style={{ color: "var(--forest)", fontFamily: "var(--font-headline)" }}>
+          <p className="text-4xl font-black" style={{ color: "#14A05F", fontFamily: "var(--font-headline)" }}>
             {matches.length}
           </p>
-          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>scheduled matches</p>
+          <p className="text-xs mt-2 text-stale">scheduled matches</p>
         </div>
-        <div className="dash-card stat-accent-blue p-6">
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+        <div className="dash-card stat-accent-blue p-6 rounded-2xl">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2 text-stale" style={{ fontFamily: "var(--font-label)" }}>
             Total Predictions
           </p>
-          <p className="text-4xl font-black" style={{ color: "#2563eb", fontFamily: "var(--font-headline)" }}>
+          <p className="text-4xl font-black" style={{ color: "#7AA7FF", fontFamily: "var(--font-headline)" }}>
             {stats.total}
           </p>
-          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>predictions made</p>
+          <p className="text-xs mt-2 text-stale">predictions made</p>
         </div>
-        <div className="dash-card stat-accent-amber p-6">
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--forest-mid)", opacity: 0.6, fontFamily: "var(--font-label)" }}>
+        <div className="dash-card stat-accent-ember p-6 rounded-2xl">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2 text-stale" style={{ fontFamily: "var(--font-label)" }}>
             Accuracy
           </p>
-          <p className="text-4xl font-black" style={{ color: "#d97706", fontFamily: "var(--font-headline)" }}>
+          <p className="text-4xl font-black" style={{ color: "#C98900", fontFamily: "var(--font-headline)" }}>
             {stats.total > 0 ? `${stats.accuracy}%` : "—"}
           </p>
-          <p className="text-xs mt-2" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>
+          <p className="text-xs mt-2 text-stale">
             {stats.correct} correct of {stats.total}
           </p>
         </div>
       </div>
 
       {/* Upcoming fixtures */}
-      <div className="dash-card overflow-hidden">
+      <div className="dash-card overflow-hidden rounded-2xl">
         <div
           className="px-6 py-4 flex items-center justify-between"
           style={{ borderBottom: "1.5px solid var(--border)" }}
         >
           <div>
-            <h2 className="text-lg font-bold" style={{ color: "var(--forest)" }}>Upcoming Fixtures</h2>
-            <p className="text-xs mt-0.5" style={{ color: "var(--forest-mid)", opacity: 0.6 }}>Next scheduled matches</p>
+            <h2 className="text-lg font-bold text-chalk">Upcoming Fixtures</h2>
+            <p className="text-xs mt-0.5 text-stale">Next scheduled matches</p>
           </div>
           <Link
             href="/dashboard/fixtures"
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-            style={{
-              background: "rgba(13,51,32,0.07)",
-              color: "var(--forest-mid)",
-              fontFamily: "var(--font-label)",
-            }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-ember text-[#221A00] transition-colors hover:bg-flame"
+            style={{ fontFamily: "var(--font-label)" }}
           >
             View all →
           </Link>
@@ -114,13 +112,13 @@ export default async function DashboardHome() {
           <div className="p-12 text-center">
             <div
               className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4"
-              style={{ background: "rgba(13,51,32,0.06)" }}
+              style={{ background: "var(--ink)" }}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--forest-mid)", opacity: 0.4 }}>
+              <svg className="w-6 h-6 text-stale" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>No upcoming fixtures. Add matches to see predictions.</p>
+            <p className="text-sm text-stale">No upcoming fixtures. Add matches to see predictions.</p>
           </div>
         ) : (
           <div>
@@ -128,28 +126,26 @@ export default async function DashboardHome() {
               <Link
                 key={match.id as string}
                 href={`/dashboard/matches/${match.id as string}`}
-                className="flex items-center gap-4 px-6 py-4 transition-all duration-150 group"
+                className="flex items-center gap-4 px-6 py-4 transition-all duration-150 group hover:bg-ink"
                 style={{
                   borderBottom: i < matches.length - 1 ? "1px solid var(--border)" : "none",
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(13,51,32,0.03)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
               >
                 {/* Teams */}
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="text-right flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                    <p className="text-sm font-semibold truncate text-chalk">
                       {(match.home_team_name as string) || "TBD"}
                     </p>
                   </div>
                   <div
                     className="px-3 py-1 rounded-lg text-xs font-mono shrink-0"
-                    style={{ background: "var(--mist)", color: "var(--forest-mid)" }}
+                    style={{ background: "var(--ink)", color: "var(--stale)" }}
                   >
                     VS
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "var(--forest)" }}>
+                    <p className="text-sm font-semibold truncate text-chalk">
                       {(match.away_team_name as string) || "TBD"}
                     </p>
                   </div>
@@ -158,7 +154,7 @@ export default async function DashboardHome() {
                 {/* Meta */}
                 <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                   <CompBadge competition={match.competition as string} />
-                  <p className="text-xs" style={{ color: "var(--forest-mid)", opacity: 0.55 }}>
+                  <p className="text-xs text-stale">
                     {new Date(match.match_date as string).toLocaleDateString("en-GB", {
                       weekday: "short",
                       day: "numeric",
@@ -167,7 +163,7 @@ export default async function DashboardHome() {
                   </p>
                 </div>
 
-                <svg className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-40 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--forest)" }}>
+                <svg className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-40 transition-opacity text-chalk" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>

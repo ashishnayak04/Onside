@@ -13,7 +13,7 @@ export default function DashboardShell({ role, userName, children }: DashboardSh
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen" style={{ background: "var(--pitch)" }}>
+    <div className="flex min-h-screen bg-pitch" style={{ background: "var(--pitch)" }}>
       <Sidebar
         role={role}
         userName={userName}
@@ -26,14 +26,13 @@ export default function DashboardShell({ role, userName, children }: DashboardSh
         <header
           className="lg:hidden flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-30"
           style={{
-            background: "#0D3320",
-            borderColor: "rgba(255,255,255,0.07)",
+            background: "var(--panel)",
+            borderColor: "var(--ghostline)",
           }}
         >
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg transition-colors"
-            style={{ color: "rgba(255,255,255,0.7)" }}
+            className="p-2 rounded-lg transition-colors text-stale hover:text-chalk"
             aria-label="Open sidebar"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,10 +40,10 @@ export default function DashboardShell({ role, userName, children }: DashboardSh
             </svg>
           </button>
           <span
-            className="text-lg text-white tracking-wider"
+            className="text-lg text-chalk tracking-wider"
             style={{ fontFamily: "var(--font-headline)", letterSpacing: "0.1em" }}
           >
-            ONSIDE
+            ONSIDE<span className="text-ember">.</span>
           </span>
         </header>
 

@@ -48,8 +48,10 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
         <div>
-          <h1 className="page-header mb-1">Predictions</h1>
-          <p className="text-sm" style={{ color: "var(--forest-mid)", opacity: 0.7 }}>
+          <h1 className="page-header mb-1">
+            Predictions<span className="text-ember">.</span>
+          </h1>
+          <p className="text-sm text-stale">
             {predictions.length} total · {filtered.length} shown
           </p>
         </div>
@@ -71,14 +73,13 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
       {/* Content */}
       {filtered.length === 0 ? (
         <div className="dash-card p-16 text-center">
-          <p className="text-sm font-medium" style={{ color: "var(--forest)", opacity: 0.5 }}>
+          <p className="text-sm font-medium text-stale">
             No predictions found{activeFilter !== "All" ? ` for ${activeFilter}` : "."}.
           </p>
           {activeFilter !== "All" && (
             <button
               onClick={() => setActiveFilter("All")}
-              className="mt-3 text-xs font-semibold"
-              style={{ color: "var(--forest-mid)" }}
+              className="mt-3 text-xs font-semibold text-flame"
             >
               Show all →
             </button>
@@ -98,31 +99,31 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
                 href={`/dashboard/matches/${pred.match_id as string}`}
                 className="dash-card block p-5 group transition-all"
                 style={{ textDecoration: "none" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(13,51,32,0.02)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(20,160,95,0.03)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "white"; }}
               >
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="text-right flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate" style={{ color: "var(--forest)" }}>
+                      <p className="text-sm font-bold truncate text-chalk">
                         {(pred.home_team_name as string) || "TBD"}
                       </p>
                     </div>
                     <div
                       className="px-3 py-1 rounded-lg shrink-0"
-                      style={{ background: "var(--mist)" }}
+                      style={{ background: "var(--ink)" }}
                     >
-                      <span className="text-xs font-mono font-bold" style={{ color: "var(--forest-mid)" }}>
+                      <span className="text-xs font-mono font-bold text-chalk">
                         {pred.predicted_home_score as number}
                       </span>
-                      <span className="text-xs mx-1" style={{ color: "var(--forest-mid)", opacity: 0.4 }}>-</span>
-                      <span className="text-xs font-mono font-bold" style={{ color: "var(--forest-mid)" }}>
+                      <span className="text-xs mx-1 text-stale">-</span>
+                      <span className="text-xs font-mono font-bold text-chalk">
                         {pred.predicted_away_score as number}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate" style={{ color: "var(--forest)" }}>
+                      <p className="text-sm font-bold truncate text-chalk">
                         {(pred.away_team_name as string) || "TBD"}
                       </p>
                     </div>
@@ -130,7 +131,7 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
 
                   <div className="shrink-0 text-right">
                     <CompBadge competition={pred.competition as string} />
-                    <p className="text-xs mt-1" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>
+                    <p className="text-xs mt-1 text-stale">
                       {new Date(pred.match_date as string).toLocaleDateString("en-GB", {
                         day: "numeric",
                         month: "short",
@@ -145,23 +146,23 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
                 {/* Bottom row */}
                 <div className="flex items-center justify-between mt-3">
                   <div className="flex items-center gap-3 text-xs" style={{ fontFamily: "var(--font-label)" }}>
-                    <span style={{ color: "var(--forest-mid)" }}>
+                    <span style={{ color: "#0B7A45" }}>
                       H <strong>{homeP}%</strong>
                     </span>
                     <span style={{ color: "#94a3b8" }}>
                       D <strong>{drawP}%</strong>
                     </span>
-                    <span style={{ color: "var(--ember)" }}>
+                    <span style={{ color: "#C98900" }}>
                       A <strong>{awayP}%</strong>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs" style={{ color: "var(--forest-mid)", opacity: 0.5 }}>Confidence</span>
+                    <span className="text-xs text-stale">Confidence</span>
                     <span
                       className="text-xs font-bold px-2 py-0.5 rounded"
                       style={{
-                        background: conf >= 70 ? "rgba(27,94,55,0.10)" : conf >= 50 ? "rgba(245,184,0,0.10)" : "rgba(255,77,0,0.08)",
-                        color: conf >= 70 ? "var(--forest-mid)" : conf >= 50 ? "#d97706" : "var(--ember)",
+                        background: conf >= 70 ? "rgba(20,160,95,0.12)" : conf >= 50 ? "rgba(242,176,28,0.16)" : "rgba(217,59,62,0.10)",
+                        color: conf >= 70 ? "#0B7A45" : conf >= 50 ? "#C98900" : "#B3272A",
                         fontFamily: "var(--font-label)",
                       }}
                     >

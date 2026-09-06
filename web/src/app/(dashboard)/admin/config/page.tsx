@@ -12,6 +12,20 @@ interface ConfigEntry {
   updated_at: string;
 }
 
+const CATEGORY_META: Record<string, { label: string; color: string; bg: string }> = {
+  api_keys:     { label: "API Keys",      color: "#C98900", bg: "rgba(242,176,28,0.14)" },
+  model:        { label: "Model",         color: "#7AA7FF", bg: "rgba(122,167,255,0.16)" },
+  pipeline:     { label: "Pipeline",      color: "#14A05F", bg: "rgba(20,160,95,0.14)"  },
+  competitions: { label: "Competitions",  color: "#f5b800", bg: "rgba(245,184,0,0.14)"  },
+  general:      { label: "General",       color: "#58645D", bg: "rgba(88,100,93,0.12)"  },
+  data:         { label: "Data",          color: "#2B6BE8", bg: "rgba(43,107,232,0.12)"  },
+  system:       { label: "System",        color: "#D93B3E", bg: "rgba(217,59,62,0.12)"  },
+};
+
+function getMeta(cat: string) {
+  return CATEGORY_META[cat] || { label: cat.replace(/_/g, " "), color: "#58645D", bg: "rgba(88,100,93,0.12)" };
+}
+
 export default function ConfigPage() {
   const [configs, setConfigs] = useState<ConfigEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,12 +33,10 @@ export default function ConfigPage() {
   const [editValue, setEditValue] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newConfig, setNewConfig] = useState({ key: "", value: "", category: "general", description: "", is_secret: false });
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState({ text: "", type: "" });
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    fetchConfigs();
-  }, []);
+  useEffect(() => { fetchConfigs(); }, []);
 
   async function fetchConfigs() {
     try {
@@ -32,10 +44,15 @@ export default function ConfigPage() {
       const data = await res.json();
       setConfigs(data.configs || []);
     } catch {
-      setMessage("Failed to load configs");
+      setMessage({ text: "Failed to load configs", type: "error" });
     } finally {
       setLoading(false);
     }
+  }
+
+  function showMsg(text: string, type = "success") {
+    setMessage({ text, type });
+    setTimeout(() => setMessage({ text: "", type: "" }), 3000);
   }
 
   async function handleSave(key: string) {
@@ -47,16 +64,15 @@ export default function ConfigPage() {
       });
       if (res.ok) {
         setEditing(null);
-        setMessage(`Updated "${key}" successfully`);
+        showMsg(`Updated "${key}" successfully`);
         fetchConfigs();
       } else {
         const data = await res.json();
-        setMessage(data.error || "Failed to update");
+        showMsg(data.error || "Failed to update", "error");
       }
     } catch {
-      setMessage("Network error");
+      showMsg("Network error", "error");
     }
-    setTimeout(() => setMessage(""), 3000);
   }
 
   async function handleAdd() {
@@ -69,16 +85,15 @@ export default function ConfigPage() {
       if (res.ok) {
         setShowAdd(false);
         setNewConfig({ key: "", value: "", category: "general", description: "", is_secret: false });
-        setMessage("Config entry created");
+        showMsg("Config entry created");
         fetchConfigs();
       } else {
         const data = await res.json();
-        setMessage(data.error || "Failed to create");
+        showMsg(data.error || "Failed to create", "error");
       }
     } catch {
-      setMessage("Network error");
+      showMsg("Network error", "error");
     }
-    setTimeout(() => setMessage(""), 3000);
   }
 
   async function handleDelete(key: string) {
@@ -90,204 +105,277 @@ export default function ConfigPage() {
         body: JSON.stringify({ key }),
       });
       if (res.ok) {
-        setMessage(`Deleted "${key}"`);
+        showMsg(`Deleted "${key}"`);
         fetchConfigs();
       }
     } catch {
-      setMessage("Network error");
+      showMsg("Network error", "error");
     }
-    setTimeout(() => setMessage(""), 3000);
   }
 
   const categories = [...new Set(configs.map((c) => c.category))];
 
   if (loading) {
-    return <div className="text-[#71717a]">Loading configuration...</div>;
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex items-center gap-3">
+          <svg className="animate-spin w-5 h-5 text-leaf" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-sm text-stale">Loading configuration...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">System Configuration</h1>
+    <div className="max-w-5xl">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="page-header mb-1">
+            System Config<span className="text-ember">.</span>
+          </h1>
+          <p className="text-sm text-stale">
+            {configs.length} config {configs.length !== 1 ? "entries" : "entry"}
+          </p>
+        </div>
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="bg-[#22c55e] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150"
+          style={{
+            background: showAdd ? "rgba(242,176,28,0.16)" : "var(--ember)",
+            color: showAdd ? "#C98900" : "#221A00",
+            border: showAdd ? "1px solid rgba(242,176,28,0.4)" : "1px solid transparent",
+          }}
         >
-          + Add Config
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showAdd ? "M6 18L18 6M6 6l12 12" : "M12 4v16m8-8H4"} />
+          </svg>
+          {showAdd ? "Cancel" : "Add Config"}
         </button>
       </div>
 
-      {message && (
-        <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 text-[#22c55e] text-sm rounded-lg p-3 mb-4">
-          {message}
+      {/* Message banner */}
+      {message.text && (
+        <div
+          className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm mb-5"
+          style={{
+            background: message.type === "success" ? "rgba(20,160,95,0.10)" : "rgba(217,59,62,0.10)",
+            border: `1px solid ${message.type === "success" ? "rgba(20,160,95,0.3)" : "rgba(217,59,62,0.3)"}`,
+            color: message.type === "success" ? "#0B7A45" : "#B3272A",
+          }}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {message.type === "success"
+              ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
+          </svg>
+          {message.text}
         </div>
       )}
 
+      {/* Add new config */}
       {showAdd && (
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">New Configuration Entry</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="dash-card rounded-2xl p-6 mb-6">
+          <h2 className="text-base font-semibold mb-4 text-chalk" style={{ fontFamily: "var(--font-label)" }}>
+            New Configuration Entry
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {[
+              { label: "Key", field: "key", placeholder: "e.g. api_football_key" },
+              { label: "Value", field: "value", placeholder: "Configuration value" },
+              { label: "Description", field: "description", placeholder: "What this config does" },
+            ].map(({ label, field, placeholder }) => (
+              <div key={field} className={field === "description" ? "md:col-span-2" : ""}>
+                <label className="block text-[11px] font-bold uppercase tracking-widest mb-2 text-stale" style={{ fontFamily: "var(--font-label)" }}>
+                  {label}
+                </label>
+                <input
+                  value={newConfig[field as keyof typeof newConfig] as string}
+                  onChange={(e) => setNewConfig({ ...newConfig, [field]: e.target.value })}
+                  placeholder={placeholder}
+                  className="w-full text-sm rounded-xl px-4 py-2.5"
+                />
+              </div>
+            ))}
             <div>
-              <label className="block text-sm text-[#a1a1aa] mb-1">Key</label>
-              <input
-                value={newConfig.key}
-                onChange={(e) => setNewConfig({ ...newConfig, key: e.target.value })}
-                placeholder="e.g. api_football_key"
-                className="w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-[#a1a1aa] mb-1">Category</label>
+              <label className="block text-[11px] font-bold uppercase tracking-widest mb-2 text-stale" style={{ fontFamily: "var(--font-label)" }}>
+                Category
+              </label>
               <select
                 value={newConfig.category}
                 onChange={(e) => setNewConfig({ ...newConfig, category: e.target.value })}
-                className="w-full"
+                className="w-full text-sm rounded-xl px-4 py-2.5"
               >
-                <option value="general">General</option>
-                <option value="api_keys">API Keys</option>
-                <option value="model">Model</option>
-                <option value="competitions">Competitions</option>
-                <option value="pipeline">Pipeline</option>
-                <option value="data">Data</option>
-                <option value="system">System</option>
+                {Object.entries(CATEGORY_META).map(([val, { label }]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-[#a1a1aa] mb-1">Value</label>
-              <input
-                value={newConfig.value}
-                onChange={(e) => setNewConfig({ ...newConfig, value: e.target.value })}
-                placeholder="Configuration value"
-                className="w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-[#a1a1aa] mb-1">Description</label>
-              <input
-                value={newConfig.description}
-                onChange={(e) => setNewConfig({ ...newConfig, description: e.target.value })}
-                placeholder="What this config does"
-                className="w-full"
-              />
-            </div>
           </div>
-          <div className="flex items-center gap-4 mt-4">
-            <label className="flex items-center gap-2 text-sm text-[#a1a1aa]">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer text-stale">
               <input
                 type="checkbox"
                 checked={newConfig.is_secret}
                 onChange={(e) => setNewConfig({ ...newConfig, is_secret: e.target.checked })}
-                className="rounded"
+                style={{ accentColor: "#14A05F" }}
               />
-              Secret (hidden by default)
+              Secret (masked by default)
             </label>
             <div className="flex-1" />
-            <button onClick={() => setShowAdd(false)} className="text-sm text-[#71717a] hover:text-white">
-              Cancel
-            </button>
             <button
               onClick={handleAdd}
-              className="bg-[#22c55e] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              className="text-sm font-semibold px-4 py-2 rounded-xl transition-all text-[#221A00] bg-ember hover:bg-flame"
             >
-              Save
+              Save Entry
             </button>
           </div>
         </div>
       )}
 
-      {categories.map((category) => (
-        <div key={category} className="mb-6">
-          <h2 className="text-sm font-semibold text-[#71717a] uppercase tracking-wider mb-3">
-            {category.replace(/_/g, " ")}
-          </h2>
-          <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[#27272a]">
-                  <th className="text-left text-xs font-medium text-[#71717a] uppercase px-4 py-3">Key</th>
-                  <th className="text-left text-xs font-medium text-[#71717a] uppercase px-4 py-3">Value</th>
-                  <th className="text-left text-xs font-medium text-[#71717a] uppercase px-4 py-3">Description</th>
-                  <th className="text-right text-xs font-medium text-[#71717a] uppercase px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {configs
-                  .filter((c) => c.category === category)
-                  .map((config) => (
-                    <tr key={config.id} className="border-b border-[#27272a] last:border-0">
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-sm text-[#22c55e]">{config.key}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {editing === config.key ? (
-                          <input
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full max-w-md text-sm"
-                            autoFocus
-                          />
-                        ) : config.is_secret && !showSecrets[config.key] ? (
-                          <span className="text-[#71717a]">••••••••</span>
-                        ) : (
-                          <span className="text-sm text-[#a1a1aa] font-mono break-all">{config.value}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm text-[#71717a]">{config.description}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          {config.is_secret && (
-                            <button
-                              onClick={() => setShowSecrets({ ...showSecrets, [config.key]: !showSecrets[config.key] })}
-                              className="text-xs text-[#71717a] hover:text-white px-2 py-1"
-                            >
-                              {showSecrets[config.key] ? "Hide" : "Show"}
-                            </button>
-                          )}
-                          {editing === config.key ? (
-                            <>
-                              <button
-                                onClick={() => handleSave(config.key)}
-                                className="text-xs text-[#22c55e] hover:text-[#16a34a] px-2 py-1"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setEditing(null)}
-                                className="text-xs text-[#71717a] hover:text-white px-2 py-1"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setEditing(config.key);
-                                  setEditValue(config.value);
-                                }}
-                                className="text-xs text-[#3b82f6] hover:text-blue-400 px-2 py-1"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDelete(config.key)}
-                                className="text-xs text-[#ef4444] hover:text-red-400 px-2 py-1"
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
+      {/* Config categories */}
+      <div className="space-y-6">
+        {categories.map((category) => {
+          const meta = getMeta(category);
+          return (
+            <div key={category}>
+              <div className="flex items-center gap-2 mb-3">
+                <span
+                  className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg"
+                  style={{ color: meta.color, background: meta.bg, fontFamily: "var(--font-label)" }}
+                >
+                  {meta.label}
+                </span>
+                <span className="text-xs text-stale">
+                  {configs.filter((c) => c.category === category).length} entries
+                </span>
+              </div>
+              <div className="dash-card rounded-2xl overflow-hidden bg-panel">
+                <table className="w-full">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--ghostline)" }}>
+                      {["Key", "Value", "Description", "Actions"].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-5 py-3 text-xs font-semibold uppercase tracking-wider ${h === "Actions" ? "text-right" : "text-left"} text-stale`}
+                          style={{ fontFamily: "var(--font-label)", background: "var(--ink)" }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
+                  </thead>
+                  <tbody>
+                    {configs
+                      .filter((c) => c.category === category)
+                      .map((config, i, arr) => (
+                        <tr
+                          key={config.id}
+                          style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--ghostline)" : "none" }}
+                          className="transition-colors"
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--ink)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
+                        >
+                          {/* Key */}
+                          <td className="px-5 py-3.5">
+                            <span className="font-mono text-sm" style={{ color: meta.color, fontFamily: "monospace" }}>
+                              {config.key}
+                            </span>
+                            {config.is_secret && (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ background: "rgba(242,176,28,0.14)", color: "#C98900" }}>
+                                secret
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Value */}
+                          <td className="px-5 py-3.5 max-w-xs">
+                            {editing === config.key ? (
+                              <input
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                autoFocus
+                                className="w-full text-sm rounded-lg px-3 py-1.5"
+                                style={{ fontFamily: "monospace" }}
+                                onKeyDown={(e) => { if (e.key === "Enter") handleSave(config.key); if (e.key === "Escape") setEditing(null); }}
+                              />
+                            ) : config.is_secret && !showSecrets[config.key] ? (
+                              <span className="text-stale" style={{ fontFamily: "monospace" }}>••••••••</span>
+                            ) : (
+                              <span className="text-sm break-all text-chalk" style={{ fontFamily: "monospace" }}>
+                                {config.value}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Description */}
+                          <td className="px-5 py-3.5">
+                            <span className="text-sm text-stale">
+                              {config.description || "—"}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {config.is_secret && (
+                                <button
+                                  onClick={() => setShowSecrets({ ...showSecrets, [config.key]: !showSecrets[config.key] })}
+                                  className="text-xs px-2.5 py-1.5 rounded-lg transition-all border border-chalk/10 text-stale hover:text-chalk"
+                                  style={{ background: "var(--ink)" }}
+                                >
+                                  {showSecrets[config.key] ? "Hide" : "Show"}
+                                </button>
+                              )}
+                              {editing === config.key ? (
+                                <>
+                                  <button
+                                    onClick={() => handleSave(config.key)}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                                    style={{ color: "#0B7A45", background: "rgba(20,160,95,0.12)", border: "1px solid rgba(20,160,95,0.3)" }}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditing(null)}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-chalk/10 text-stale hover:text-chalk"
+                                    style={{ background: "var(--ink)" }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => { setEditing(config.key); setEditValue(config.value); }}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                                    style={{ color: "#2B6BE8", background: "rgba(43,107,232,0.12)" }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(config.key)}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                                    style={{ color: "#B3272A", background: "rgba(217,59,62,0.10)" }}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
