@@ -76,11 +76,20 @@ const TICKER = [
 ];
 
 const STATS = [
-  { value: "50.3", suffix: "%", label: "Calibration Accuracy", desc: "vs spread of our own probabilities" },
-  { value: "1.022", suffix: "", label: "Log-Loss Score", desc: "lower is better — stable out-of-sample" },
-  { value: "52.4", suffix: "%", label: "Bookmaker Benchmark", desc: "the house — the bar we chase" },
-  { value: "1527", suffix: "", label: "Matches Fitted", desc: "Dixon-Coles + SOT blend w=0.4" },
+  { value: "44", suffix: "", label: "Matches Tracked", desc: "every published probability, scored in full" },
+  { value: "50.0", suffix: "%", label: "Top-Pick Hit Rate", desc: "picked the most-likely outcome in 22 of 44" },
+  { value: "839", suffix: "", label: "Finished Matches", desc: "in the underlying dataset to date" },
+  { value: "2", suffix: "", label: "Competitions", desc: "La Liga + UEFA Champions League" },
 ];
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatFreshness(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
 
 const CONF_STYLES = {
   HIGH:   { chip: "border-leaf/40 bg-leaf/12 text-leaf2", dot: "bg-leaf" },
@@ -215,7 +224,7 @@ function Nav() {
 /* ──────────────────────────────────────────────────────── */
 /*  HERO                                                   */
 /* ──────────────────────────────────────────────────────── */
-function Hero() {
+function Hero({ stats }: { stats: typeof STATS }) {
   const sectionRef = useRef<HTMLElement>(null);
   const reduce = useReducedMotion();
 
@@ -291,14 +300,14 @@ function Hero() {
             </div>
 
             <p className="hero-sub max-w-lg text-[15px] leading-relaxed text-stale">
-              Real form, expected goals, injuries &amp; H2H — fed into a model backtested on
-              1,527 matches against bookmaker closing odds. Every number shows its reasoning.
+              Real form, expected goals, injuries &amp; H2H — fed into a Dixon-Coles + SOT model.
+              Every number shows its reasoning, and the track record is published win or lose.
             </p>
 
             <div className="hero-ctas mt-10 flex flex-wrap items-center gap-4">
               <Link href="/login"
                 className="group inline-flex items-center gap-2 rounded-xl bg-ember px-7 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-[#221A00] transition-all duration-300 hover:bg-flame hover:-translate-y-0.5 ember-glow">
-                Get My First Prediction
+                Enter the Terminal
                 <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
               </Link>
               <a href="#method"
@@ -389,7 +398,7 @@ function Hero() {
 
         {/* stats strip */}
         <div className="hero-stats relative z-10 mb-10 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-chalk/10 bg-chalk/10 lg:grid-cols-4">
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div key={s.label} className="bg-panel px-6 py-5">
               <div className="font-display text-4xl text-chalk tabular-nums">
                 <CountUp value={s.value} suffix={s.suffix} />
@@ -520,7 +529,7 @@ function MatchdayBoard() {
             index="01"
             label="The Matchday Board"
             title={<>WHO THE MODEL <br />FANCIES <span className="text-stroke-ember">TODAY.</span></>}
-            sub="Three live reads built from form, xG, availability and head-to-head data. Autoplayting — skip with the controls."
+            sub="Example reads from an earlier fixture cycle — illustrative, not live. Sign in to see the current board with every probability scored against the result."
           />
         </div>
 
@@ -612,7 +621,7 @@ function Method() {
             <div>
               <p className="font-display text-3xl text-chalk tracking-tight">DIXON-COLES + POISSON</p>
               <p className="mt-1 text-[14px] text-chalk/60">
-                Scoring model calibrated on 1,527 real matches — blended with a recency-aware SOT layer.
+                Fitted on historical league results, blended with a recency-aware SOT layer. Every fit is versioned and published.
               </p>
             </div>
             <span className="rounded-xl bg-leaf px-5 py-2.5 font-label text-[12px] font-bold uppercase tracking-widest text-[#0B3D24]">
@@ -628,7 +637,7 @@ function Method() {
 /* ──────────────────────────────────────────────────────── */
 /*  TRACK RECORD                                           */
 /* ──────────────────────────────────────────────────────── */
-function TrackRecord() {
+function TrackRecord({ stats, freshness }: { stats: typeof STATS; freshness: string | null }) {
   const sectionRef = useRef<HTMLElement>(null);
   const reduce = useReducedMotion();
 
@@ -667,13 +676,13 @@ function TrackRecord() {
         <SectionHead
           index="03"
           label="The Receipts"
-          title={<>WE SHOW <br />ACCURACY, <br /><span className="text-stroke-chalk">NOT JUST CONFIDENCE.</span></>}
-          sub="A confidence score is worthless if you never check it against reality. We backtest against bookmaker closing odds — and publish the result, win or lose."
+          title={<>WE SCORE EVERY <br />PROBABILITY <br /><span className="text-stroke-chalk">AGAINST REALITY.</span></>}
+          sub="A probability is worthless if you never check it against what actually happened. Every published read is scored against the result — and the outcome is shown, win or lose."
           className="mb-14"
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div key={s.label} className="tr-card crop-marks rounded-2xl border border-chalk/10 bg-white/80 p-6 backdrop-blur-md">
               <div className="font-display text-[clamp(44px,5vw,64px)] text-chalk leading-none tabular-nums">
                 <CountUp value={s.value} suffix={s.suffix} />
@@ -684,56 +693,41 @@ function TrackRecord() {
           ))}
         </div>
 
-        {/* calibration bar vs bookmakers */}
+        {/* live-scored track record */}
         <div className="tr-card mt-6 rounded-2xl border border-chalk/10 bg-white/80 p-6 backdrop-blur-md">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-label text-[11px] font-bold uppercase tracking-[0.24em] text-chalk/70">Vs Bookmaker Closing Odds</span>
-            <span className="font-label text-[10px] uppercase tracking-widest text-stale">last 1,527 fixtures</span>
+            <span className="font-label text-[11px] font-bold uppercase tracking-[0.24em] text-chalk/70">Live-Scored Track Record</span>
+            <span className="font-label text-[10px] uppercase tracking-widest text-stale">
+              every read scored vs the result{freshness ? ` · fresh ${freshness}` : ""}
+            </span>
           </div>
-          <div className="relative h-14">
-            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-chalk/15" />
-            <div className="absolute top-1/2 flex w-full -translate-y-1/2 items-center justify-between">
-              <div className="relative flex flex-col items-center">
-                <span className="h-2.5 w-px bg-chalk/40" />
-                <span className="mt-1 font-label text-[10px] uppercase tracking-wider text-stale">40%</span>
-              </div>
-              <div className="relative flex flex-col items-center">
-                <span className="h-2.5 w-px bg-chalk/40" />
-                <span className="mt-1 font-label text-[10px] uppercase tracking-wider text-stale">45%</span>
-              </div>
-              <div className="relative flex flex-col items-center">
-                <span className="h-2.5 w-px bg-leaf" />
-                <span className="mt-1 font-label text-[10px] font-bold uppercase tracking-wider text-leaf">50%</span>
-              </div>
-              <div className="relative flex flex-col items-center">
-                <span className="h-2.5 w-px bg-chalk/40" />
-                <span className="mt-1 font-label text-[10px] uppercase tracking-wider text-stale">55%</span>
-              </div>
-              <div className="relative flex flex-col items-center">
-                <span className="h-2.5 w-px bg-chalk/40" />
-                <span className="mt-1 font-label text-[10px] uppercase tracking-wider text-stale">60%</span>
-              </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <div className="font-display text-4xl text-chalk tabular-nums">44</div>
+              <div className="mt-1 font-label text-[10px] font-bold uppercase tracking-widest text-leaf2">Reads Published</div>
+              <p className="mt-1 text-[12px] leading-snug text-chalk/45">all from live fixtures, none cherry-picked.</p>
             </div>
-            {/* our marker */}
-            <div className="absolute top-1/2 -translate-y-1/2" style={{ left: "51.5%" }}>
-              <div className="flex flex-col items-center">
-                <span className="rounded-full border border-leaf bg-white px-2 py-0.5 font-label text-[10px] font-bold tabular-nums text-leaf2">50.3%</span>
-                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-leaf leaf-glow" />
-              </div>
+            <div>
+              <div className="font-display text-4xl text-chalk tabular-nums">22 / 44</div>
+              <div className="mt-1 font-label text-[10px] font-bold uppercase tracking-widest text-leaf2">Top Pick Correct</div>
+              <p className="mt-1 text-[12px] leading-snug text-chalk/45">50.0% — a small sample, so read the caveats below.</p>
             </div>
-            {/* house marker */}
-            <div className="absolute top-1/2 -translate-y-1/2" style={{ left: "62%" }}>
-              <div className="flex flex-col items-center">
-                <span className="rounded-full border border-chalk/25 bg-white px-2 py-0.5 font-label text-[10px] font-bold tabular-nums text-stale">52.4%</span>
-                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-chalk/40" />
-              </div>
+            <div>
+              <div className="font-display text-4xl text-chalk tabular-nums">0.62</div>
+              <div className="mt-1 font-label text-[10px] font-bold uppercase tracking-widest text-leaf2">Brier Score</div>
+              <p className="mt-1 text-[12px] leading-snug text-chalk/45">three-way probability error; lower is better.</p>
             </div>
+          </div>
+          <div className="mt-5 border-t border-chalk/10 pt-4 text-[12px] leading-relaxed text-chalk/50">
+            44 scored outcomes is not a statistically meaningful sample. The purpose here is honesty, not marketing —
+            as the sample grows, these numbers will move. The full methodology and versioned track record live on the{" "}
+            <a href="/methodology" className="font-semibold text-leaf2 underline-offset-2 hover:underline">methodology page</a>.
           </div>
         </div>
 
         <p className="tr-card mt-8 max-w-3xl text-[13px] leading-relaxed text-chalk/40">
-          Honest framing: beating bookmakers long-term is hard — which is exactly why we publish the comparison
-          instead of hiding it. Our edge is transparency and discipline, not certainty.
+          Honest framing: 44 scored outcomes is a small sample — favourites lose, underdogs win, and
+          these numbers will move as the sample grows. We publish the comparison instead of hiding it.
         </p>
       </div>
     </section>
@@ -835,20 +829,21 @@ function CTABanner() {
         style={{ backgroundImage: "repeating-linear-gradient(-45deg, #221A00 0, #221A00 2px, transparent 2px, transparent 34px)" }} />
       <div className="relative mx-auto max-w-5xl px-6 text-center">
         <p className="mb-6 font-label text-[12px] font-bold uppercase tracking-[0.3em] text-[#221A00]/80">
-          Your First Prediction Is Free
+          A Probability Is Not a Promise
         </p>
         <h2 className="font-display leading-[0.88] text-[#221A00] text-[clamp(52px,7.5vw,108px)]">
-          SEE THE READ<br />
-          BEFORE YOU<br />
-          <span className="text-stroke-chalk" style={{ WebkitTextStroke: "2.5px #221A00" }}>PLACE ANYTHING.</span>
+          READ THE NUMBERS.<br />
+          MAKE YOUR CALL.<br />
+          <span className="text-stroke-chalk" style={{ WebkitTextStroke: "2.5px #221A00" }}>KNOW THE RISK.</span>
         </h2>
         <p className="mx-auto mt-7 max-w-xl text-[16px] leading-relaxed text-[#221A00]/80">
-          We&apos;ll show you the numbers, the confidence band and the reasoning — then you decide.
+          Onside publishes model probabilities, not guarantees. We&apos;ll show the numbers and the reasoning —
+          what you do with them is your call.
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <Link href="/login"
             className="group inline-flex items-center gap-2 rounded-xl bg-[#0B0F0C] px-8 py-4 font-label text-[13px] font-bold uppercase tracking-widest text-white transition-all duration-300 hover:bg-[#223A2F] hover:-translate-y-0.5">
-            Get My First Prediction
+            Enter the Terminal
             <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
           </Link>
           <a href="#method"
@@ -856,6 +851,11 @@ function CTABanner() {
             Revisit the Method
           </a>
         </div>
+        <p className="mx-auto mt-8 max-w-2xl text-[12px] leading-relaxed text-[#221A00]/60">
+          Nothing on this site is betting advice. Predictive probabilities are uncertain estimates — favourites lose,
+          underdogs win, and no model can guarantee any outcome. Bet only what you can afford to lose; if you or someone
+          you know is struggling with gambling, seek help from a responsible-gambling support service.
+        </p>
       </div>
     </section>
   );
@@ -896,14 +896,35 @@ function Footer() {
 /*  PAGE                                                   */
 /* ──────────────────────────────────────────────────────── */
 export default function Landing() {
+  const [stats, setStats] = useState<typeof STATS>(STATS);
+  const [freshness, setFreshness] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/public/metrics")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((d) => {
+        if (!d || cancelled) return;
+        setStats([
+          { value: String(d.matches_tracked ?? STATS[0].value), suffix: "", label: STATS[0].label, desc: STATS[0].desc },
+          { value: d.top_pick_rate != null ? d.top_pick_rate.toFixed(1) : STATS[1].value, suffix: "%", label: STATS[1].label, desc: `picked the most-likely outcome in ${d.top_pick_hits ?? 0} of ${d.matches_tracked ?? 0}` },
+          { value: String(d.finished_matches ?? STATS[2].value), suffix: "", label: STATS[2].label, desc: STATS[2].desc },
+          { value: String(d.competitions ?? STATS[3].value), suffix: "", label: STATS[3].label, desc: STATS[3].desc },
+        ]);
+        setFreshness(formatFreshness(d.updated_at));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <main className="relative overflow-x-clip">
       <Nav />
-      <Hero />
+      <Hero stats={stats} />
       <ScoreBar />
       <MatchdayBoard />
       <Method />
-      <TrackRecord />
+      <TrackRecord stats={stats} freshness={freshness} />
       <Competitions />
       <CTABanner />
       <Footer />

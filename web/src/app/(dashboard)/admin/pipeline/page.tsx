@@ -9,6 +9,17 @@ interface ConfigEntry {
   description: string | null;
 }
 
+interface PipelineRun {
+  status: string | null;
+  model_version: string | null;
+  fixtures_processed: number | null;
+  predictions_written: number | null;
+  track_record_synced: number | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
 function InfoRow({
   label,
   value,
@@ -50,14 +61,20 @@ function InfoRow({
 
 export default function PipelinePage() {
   const [configs, setConfigs] = useState<ConfigEntry[]>([]);
+  const [run, setRun] = useState<PipelineRun | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/admin/config");
-        const data = await res.json();
-        setConfigs(data.configs || []);
+        const [configRes, statusRes] = await Promise.all([
+          fetch("/api/admin/config"),
+          fetch("/api/admin/pipeline-status"),
+        ]);
+        const configData = await configRes.json();
+        setConfigs(configData.configs || []);
+        const statusData = await statusRes.json();
+        setRun(statusData.latestRun || null);
       } catch {
         // ignore
       } finally {
@@ -100,28 +117,63 @@ export default function PipelinePage() {
         </p>
       </div>
 
-      {/* Status banner */}
-      <div
-        className="flex items-center gap-3 rounded-xl px-4 py-3 mb-6"
-        style={{ background: "rgba(20,160,95,0.08)", border: "1px solid rgba(20,160,95,0.25)" }}
-      >
-        <span className="relative flex w-2 h-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: "#14A05F" }} />
-          <span className="relative inline-flex rounded-full w-2 h-2" style={{ background: "#14A05F" }} />
-        </span>
-        <p className="text-sm font-medium text-leaf2">
-          Pipeline operational — running on schedule
-        </p>
-        <div className="ml-auto">
-          <Link
-            href="/admin/config"
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg"
-            style={{ color: "#221A00", background: "var(--ember)" }}
+      {/* Honest status banner */}
+      {(() => {
+        const s = run?.status;
+        const isGreen = s === "success";
+        const isRed = s === "failed";
+        const color = isRed ? "#D93036" : isGreen ? "#14A05F" : "#F2B01C";
+        return (
+          <div
+            className="flex items-center gap-3 rounded-xl px-4 py-3 mb-6"
+            style={{
+              background: `rgba(${isRed ? "217,48,54" : isGreen ? "20,160,95" : "242,176,28"},0.08)`,
+              border: `1px solid rgba(${isRed ? "217,48,54" : isGreen ? "20,160,95" : "242,176,28"},0.25)`,
+            }}
           >
-            Configure →
-          </Link>
-        </div>
-      </div>
+            <span className="relative flex w-2 h-2">
+              {isRed ? null : (
+                <span
+                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                  style={{ background: color }}
+                />
+              )}
+              <span className="relative inline-flex rounded-full w-2 h-2" style={{ background: color }} />
+            </span>
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--chalk)" }}>
+                {s === "success" && "Last pipeline run succeeded"}
+                {s === "failed" && "Last pipeline run failed"}
+                {s === "running" && "Pipeline run in progress"}
+                {!s && "No pipeline run recorded yet"}
+                {run?.finished_at
+                  ? ` · ${new Date(run.finished_at).toLocaleString()}`
+                  : run?.started_at
+                    ? ` · started ${new Date(run.started_at).toLocaleString()}`
+                    : ""}
+              </p>
+              {s === "failed" && run?.error && (
+                <p className="mt-0.5 text-xs text-stale">Error: {run.error}</p>
+              )}
+              {!s && (
+                <p className="mt-0.5 text-xs text-stale">
+                  This reflects the actual run log — nothing is reported as running on schedule
+                  unless the pipeline genuinely wrote a run entry.
+                </p>
+              )}
+            </div>
+            <div className="ml-auto">
+              <Link
+                href="/admin/config"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                style={{ color: "#221A00", background: "var(--ember)" }}
+              >
+                Configure →
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Cards grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
@@ -169,6 +221,22 @@ export default function PipelinePage() {
           </div>
 
           <InfoRow label="Active Model" value={modelConfig?.value || "Not set"} />
+          <InfoRow
+            label="Last Run Model"
+            value={run?.model_version || "—"}
+          />
+          <InfoRow
+            label="Fixtures Processed"
+            value={run?.fixtures_processed != null ? String(run.fixtures_processed) : "—"}
+          />
+          <InfoRow
+            label="Predictions Written"
+            value={run?.predictions_written != null ? String(run.predictions_written) : "—"}
+          />
+          <InfoRow
+            label="Track Record Synced"
+            value={run?.track_record_synced != null ? String(run.track_record_synced) : "—"}
+          />
           <div className="flex items-center justify-between py-3 border-b border-chalk/10">
             <span className="text-sm text-stale">Status</span>
             <span className="text-xs text-stale">

@@ -91,7 +91,7 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
             const homeP = Math.round((pred.home_win_prob as number) * 100);
             const drawP = Math.round((pred.draw_prob as number) * 100);
             const awayP = Math.round((pred.away_win_prob as number) * 100);
-            const conf = Math.round((pred.confidence as number) * 100);
+            const conf = Math.max(homeP, drawP, awayP);
 
             return (
               <Link
@@ -157,7 +157,7 @@ export default function PredictionsClient({ predictions }: { predictions: Predic
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-stale">Confidence</span>
+                    <span className="text-xs text-stale">Model Probability</span>
                     <span
                       className="text-xs font-bold px-2 py-0.5 rounded"
                       style={{

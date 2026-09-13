@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 import { AuthShell } from "@/components/AuthShell";
 
@@ -13,6 +12,18 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [tracked, setTracked] = useState("44");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/public/metrics")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.matches_tracked != null) setTracked(String(d.matches_tracked));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,8 +44,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(data.user.role === "super_admin" ? "/admin" : "/dashboard");
-      router.refresh();
+      router.replace(data.user.role === "super_admin" ? "/admin" : "/dashboard");
     } catch {
       setError("Network error");
     } finally {
@@ -48,8 +58,8 @@ export default function LoginPage() {
       photoAlt="Real Madrid players in action against Bayern Munich"
       badge="Matchday Ready"
       headline={<>YOUR READ,<br />LIVE<span className="text-ember">.</span></>}
-      sub="Real form, expected goals, injuries and H2H — a model backtested on 1,527 matches, with every number showing its reasoning."
-      stat={{ value: "50.3%", label: "Calibration" }}
+      sub="Real form, expected goals, injuries and H2H — with every number showing its reasoning. Track record and methodology are published openly."
+      stat={{ value: tracked, label: "matches tracked" }}
     >
       <div className="crop-marks relative rounded-2xl border border-chalk/10 bg-panel shadow-[0_30px_80px_-40px_rgba(11,15,12,0.35)]">
         {/* header */}
@@ -143,10 +153,7 @@ export default function LoginPage() {
         </form>
 
         <div className="border-t border-chalk/10 px-8 py-5 text-center text-sm text-stale">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="font-semibold text-ember transition-colors duration-200 hover:text-flame">
-            Create one
-          </Link>
+          Private access — accounts are provisioned by an administrator.
         </div>
       </div>
     </AuthShell>

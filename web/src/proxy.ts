@@ -7,7 +7,7 @@ export function proxy(request: NextRequest) {
   const user = token ? verifyToken(token) : null;
 
   // Public routes (landing page at / is public; auth pages redirect authed users away)
-  const publicRoutes = ["/", "/login", "/register", "/api/auth/login", "/api/auth/register"];
+  const publicRoutes = ["/", "/login", "/methodology", "/api/auth/login", "/api/public/metrics"];
   if (publicRoutes.includes(pathname)) {
     if (pathname === "/") {
       return NextResponse.next();

@@ -53,20 +53,21 @@ function ProbCard({
 export default async function MatchDetailPage({ params }: PageProps) {
   const { id } = await params;
 
-  const match = await queryOne<Record<string, unknown>>(`
+  const [match, prediction] = await Promise.all([
+    queryOne<Record<string, unknown>>(`
     SELECT m.*, ht.name as home_team_name, ht.short_name as home_short,
       at.name as away_team_name, at.short_name as away_short
     FROM matches m
     LEFT JOIN teams ht ON m.home_team_id = ht.id
     LEFT JOIN teams at ON m.away_team_id = at.id
     WHERE m.id = $1
-  `, [id]);
+  `, [id]),
+    queryOne<Record<string, unknown>>(`
+    SELECT * FROM predictions WHERE match_id = $1 ORDER BY created_at DESC LIMIT 1
+  `, [id]),
+  ]);
 
   if (!match) notFound();
-
-  const prediction = await queryOne<Record<string, unknown>>(`
-    SELECT * FROM predictions WHERE match_id = $1 ORDER BY created_at DESC LIMIT 1
-  `, [id]);
 
   let playerPredictions: Record<string, unknown>[] = [];
   if (prediction) {
@@ -85,7 +86,11 @@ export default async function MatchDetailPage({ params }: PageProps) {
   const homeWin = prediction ? Math.round((prediction.home_win_prob as number) * 100) : 0;
   const draw = prediction ? Math.round((prediction.draw_prob as number) * 100) : 0;
   const awayWin = prediction ? Math.round((prediction.away_win_prob as number) * 100) : 0;
-  const conf = prediction ? Math.round((prediction.confidence as number) * 100) : 0;
+  const conf = prediction ? Math.round(Math.max(
+        (prediction.home_win_prob as number) * 100,
+        (prediction.draw_prob as number) * 100,
+        (prediction.away_win_prob as number) * 100
+      )) : 0;
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -216,7 +221,7 @@ export default async function MatchDetailPage({ params }: PageProps) {
                 bg="rgba(242,176,28,0.14)"
               />
               <ProbCard
-                label="Confidence"
+                label="Model Probability"
                 value={`${conf}%`}
                 accentColor="#7AA7FF"
                 bg="rgba(122,167,255,0.16)"

@@ -157,7 +157,11 @@ export default function FixturesClient({ matches }: { matches: Match[] }) {
                             fontFamily: "var(--font-label)",
                           }}
                         >
-                          {match.predicted_outcome as string} · {Math.round((match.confidence as number) * 100)}%
+                          {match.predicted_outcome as string} · {Math.round(Math.max(
+                (match.home_win_prob as number) || 0,
+                (match.draw_prob as number) || 0,
+                (match.away_win_prob as number) || 0
+              ) * 100)}%
                         </span>
                       ) : (
                         <span className="text-xs text-stale">

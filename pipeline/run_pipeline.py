@@ -28,7 +28,7 @@ from pathlib import Path
 # Ensure pipeline/ is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from db.connection import fetch_all, fetch_one
+from db.connection import fetch_all, fetch_one, execute
 
 log = logging.getLogger("pipeline")
 
@@ -364,6 +364,20 @@ def run_pipeline(
         summary["backtest"] = metrics
         return summary
 
+    # Pipeline run log — honest status for the admin page.
+    run_id = None
+    try:
+        row = fetch_one(
+            "INSERT INTO pipeline_runs (status, started_at) VALUES ('running', NOW()) RETURNING id"
+        )
+        run_id = row["id"] if row else None
+    except Exception as exc:  # pragma: no cover - observability only, never fatal
+        log.warning("Could not create pipeline_runs row: %s", exc)
+
+    pred_count = None
+    track_count = None
+    fixtures_with_features: list[dict] = []
+
     # Step 1: Historical
     if not skip_historical:
         try:
@@ -447,6 +461,47 @@ def run_pipeline(
     elapsed = time.time() - start
     summary["elapsed_seconds"] = round(elapsed, 1)
     log.info("Pipeline complete in %.1fs", elapsed)
+
+    if run_id:
+        try:
+            failed = any(
+                isinstance(step, dict) and step.get("status") == "error"
+                for step in summary["steps"].values()
+            )
+            error = next(
+                (
+                    step.get("error")
+                    for step in summary["steps"].values()
+                    if isinstance(step, dict)
+                    and step.get("status") == "error"
+                    and step.get("error")
+                ),
+                None,
+            )
+            model_version = None
+            try:
+                from predict.generator import MODEL_VERSION
+
+                model_version = MODEL_VERSION
+            except Exception:
+                pass
+            execute(
+                "UPDATE pipeline_runs SET status = %s, model_version = %s, "
+                "fixtures_processed = %s, predictions_written = %s, "
+                "track_record_synced = %s, error = %s, finished_at = NOW() "
+                "WHERE id = %s",
+                (
+                    "failed" if failed else "success",
+                    model_version,
+                    len(fixtures_with_features),
+                    pred_count,
+                    track_count,
+                    error,
+                    run_id,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - observability only
+            log.warning("Could not finalize pipeline_runs row: %s", exc)
 
     return summary
 

@@ -23,7 +23,7 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Onside — Football Prediction Platform | La Liga & UCL",
   description:
-    "Dixon-Coles + SOT model backtested on 1,527 matches. Real form, expected goals, injuries and H2H — every number shows its reasoning.",
+    "Dixon-Coles + SOT model. Real form, expected goals, injuries and H2H — every number shows its reasoning, and the track record is published.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

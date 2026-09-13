@@ -17,7 +17,8 @@ export default async function DashboardHome() {
   let matches: Record<string, unknown>[] = [];
   let stats = { total: 0, correct: 0, accuracy: 0 };
   try {
-    matches = await query(`
+    const [matchRows, acc] = await Promise.all([
+      query(`
       SELECT m.*, ht.name as home_team_name, ht.short_name as home_short,
         at.name as away_team_name, at.short_name as away_short
       FROM matches m
@@ -26,13 +27,15 @@ export default async function DashboardHome() {
       WHERE m.status = 'scheduled'
       ORDER BY m.match_date ASC
       LIMIT 10
-    `);
-    const acc = await query<{ total_predictions: string; correct_predictions: string; accuracy: number }>(`
+    `),
+      query<{ total_predictions: string; correct_predictions: string; accuracy: number }>(`
       SELECT COUNT(*) as total_predictions,
         COUNT(*) FILTER (WHERE was_correct = true) as correct_predictions,
         ROUND(COUNT(*) FILTER (WHERE was_correct = true)::decimal / NULLIF(COUNT(*), 0) * 100, 1) as accuracy
       FROM track_record
-    `);
+    `),
+    ]);
+    matches = matchRows;
     if (acc[0]) {
       stats = {
         total: parseInt(acc[0].total_predictions || "0", 10),

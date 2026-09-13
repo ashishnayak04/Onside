@@ -148,6 +148,20 @@ CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_track_record_prediction_match ON track_record(prediction_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_track_record_match ON track_record(match_id);
 
+-- Pipeline run log (honest status for the admin pipeline page)
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  status VARCHAR(20) NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+  model_version VARCHAR(50),
+  fixtures_processed INTEGER,
+  predictions_written INTEGER,
+  track_record_synced INTEGER,
+  error TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_started ON pipeline_runs(started_at);
+
 -- Ensure the feedback (calibration) columns exist even on already-created tables.
 DO $$
 BEGIN
@@ -159,11 +173,8 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_system_config_category ON system_config(category);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(key);
 
--- Insert default super admin (password: admin123)
--- bcrypt hash of 'admin123'
-INSERT INTO users (email, password_hash, name, role) VALUES
-  ('admin@onside.io', '$2b$10$AD3RCLTaG4ATi2E00fg5YOZKGLhvntNkn1fJgpnSdRDk4xF9hSDEG', 'Super Admin', 'super_admin')
-ON CONFLICT (email) DO NOTHING;
+-- NOTE: No seeded administrator account. Admins are provisioned manually
+-- (see scripts/set-admin-password.js) so no default credentials ever ship.
 
 -- Insert default system config
 INSERT INTO system_config (key, value, category, description, is_secret) VALUES
@@ -171,7 +182,7 @@ INSERT INTO system_config (key, value, category, description, is_secret) VALUES
   ('api_football_base_url', 'https://v3.football.api-sports.io', 'api_keys', 'API-Football base URL', false),
   ('statsbomb_data_path', '/data/statsbomb', 'data', 'Path to StatsBomb open data', false),
   ('active_competitions', '["La Liga", "UEFA Champions League"]', 'competitions', 'Comma-separated list of active competitions', false),
-  ('prediction_model', 'xgboost', 'model', 'Active prediction model (poisson, dixon_coles, xgboost)', false),
+  ('prediction_model', 'dc-sot-hybrid-w0.4-xi0.004-calib-v1', 'model', 'Active prediction model version', false),
   ('model_confidence_threshold', '0.6', 'model', 'Minimum confidence threshold to show predictions', false),
   ('pipeline_schedule_cron', '0 6 * * *', 'pipeline', 'Cron schedule for prediction pipeline (UTC)', false),
   ('maintenance_mode', 'false', 'system', 'Enable maintenance mode', false)

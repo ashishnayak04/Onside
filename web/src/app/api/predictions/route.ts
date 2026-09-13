@@ -39,7 +39,10 @@ export async function GET(request: NextRequest) {
 
     // All predictions with match info
     const predictions = await query(`
-      SELECT p.*, m.match_date, m.competition, m.home_score, m.away_score, m.status,
+      SELECT p.id, p.match_id, p.predicted_home_score, p.predicted_away_score,
+        p.predicted_outcome, p.home_win_prob, p.draw_prob, p.away_win_prob,
+        p.confidence, p.model_version, p.created_at,
+        m.match_date, m.competition, m.home_score, m.away_score, m.status,
         ht.name as home_team_name, at.name as away_team_name
       FROM predictions p
       JOIN matches m ON p.match_id = m.id
